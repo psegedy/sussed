@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: sussed-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sussed
+      POSTGRES_PASSWORD: sussed_dev_password
+      POSTGRES_DB: sussed
+    ports:
+      - "5432:5432"
+    volumes:
+      - sussed_postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sussed -d sussed"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: pgAdmin for database management (uncomment if needed)
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: sussed-pgadmin
+  #   restart: unless-stopped
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@sussed.local
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - db
+
+volumes:
+  sussed_postgres_data:
