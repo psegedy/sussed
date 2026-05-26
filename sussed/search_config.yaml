@@ -1,5 +1,5 @@
 # sussed Search Configuration 🏠
-# 
+#
 # This file defines what you're looking for in an apartment.
 # Customize it and run: sussed hunt --config search_config.yaml
 #
@@ -9,42 +9,37 @@
 # - The agent will explain its scoring in the results
 #
 
-name: Brno 2+kk/2+1 Hunt
-description: Looking for a nice 2-room apartment in Brno under 10M
+name: Brno 2+kk/3+kk new-build hunt
+description: Looking for a 2+kk or 3+kk new-build / well-kept apartment in Brno with parking, under 10M
 criteria:
   city: Brno
   apartment_types:
   - 2+kk
   - 2+1
   - 3+kk
-  - 3+1
   property_type: apartment
   listing_type: sale
   max_price: 10000000
-  max_price_per_m2: 170000
+  max_price_per_m2: 160000
   min_area_m2: 45.0
   avoid_ground_floor: false
   avoid_top_floor: false
   require_parking: true
   require_balcony: false
   require_cellar: false
-  require_elevator: false
-  reject_panel_building: false
+  require_elevator: true
+  reject_panel_building: true
   reject_ground_floor: false
   min_photos: 2
   require_floor_plan: false
   # Auto-reject listings containing these keywords in description (case-insensitive)
   # exclude_description_keywords: "kalevala"
-  max_listing_age: 7
+  max_listing_age: 14
 scoring:
-  price_vs_market: 0.15
-  location_quality: 0.25
-  features_match: 0.2
-  listing_quality: 0.15
-  age_condition: 0.1
-  bonus_new_building: 100
-  bonus_reconstruction: 50
-  penalty_no_parking: -50
+  bonus_new_building: 300
+  bonus_reconstruction: 100
+  bonus_very_good_condition: 88
+  penalty_no_parking: -200
   penalty_panel: -100
   # Extra penalty keywords for descriptions (merged with built-in sketchy list)
   # penalize_description_keywords:
@@ -53,16 +48,17 @@ scoring:
   # Extra bonus keywords for descriptions (merged with built-in good list)
   # bonus_description_keywords:
   #   výhled na park: 30
-    # garáž v ceně: 40
+  #   garáž v ceně: 40
 output:
   mode: best
-  limit: 10
+  limit: 20
   include_analysis: true
   include_description: false
   format: table
 agent:
   max_listings_to_process: 1000
   fetch_descriptions: true
+  enrich_top_n: 500
   skip_already_scored: false
   treat_1kc_as_poa: true
   poa_evaluation_mode: description_only
@@ -72,8 +68,13 @@ notes_for_agent: I prefer quiet neighborhoods, ideally close to a park or green 
   I work from home so natural light is important. Don't mind an older building if
   it's been recently renovated.
 preferred_districts:
-- Královo Pole
 - Žabovřesky
+- Veveří
+- Sadová
+- Královo Pole
+- Černá Pole
+- Staré Brno
+- Medlánky
 - Líšeň
 avoid_districts:
 - Cejl

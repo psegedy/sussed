@@ -1,0 +1,91 @@
+"""Pydantic models for AI listing review payloads."""
+
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any
+from uuid import UUID  # noqa: TC003
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class ReviewVibe(str, Enum):
+    """Human-readable Pydantic input labels mapped to DB `VibeCheck` during persistence."""
+
+    PEAK = "peak"
+    VALID = "valid"
+    MID = "mid"
+    SUS = "sus"
+
+
+class PreparedListingReview(BaseModel):
+    """Listing payload prepared for a coding-agent skill to review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    listing_id: UUID
+    external_id: str
+    source: str
+    title: str
+    url: str
+    price_czk: int
+    price_per_m2: int | None = None
+    listing_type: str | None = None
+    city: str
+    district: str | None = None
+    address: str | None = None
+    apartment_type: str | None = None
+    area_m2: float | None = None
+    floor: int | None = None
+    total_floors: int | None = None
+    description: str | None = None
+    detail_items: list[dict[str, Any]] = Field(default_factory=list)
+    features: dict[str, Any] = Field(default_factory=dict)
+    raw_labels: list[str] = Field(default_factory=list)
+    image_urls: list[str] = Field(default_factory=list)
+    image_paths: list[str] = Field(default_factory=list)
+    image_count: int = 0
+    has_floor_plan: bool = False
+    has_video: bool = False
+    has_3d_tour: bool = False
+    price_history: list[dict[str, Any]] = Field(default_factory=list)
+    current_ai_score: int | None = None
+    current_ai_reviewed_at: datetime | None = None
+    heuristic_notes: list[str] = Field(default_factory=list)
+    input_hash: str
+
+
+class ReviewResultInput(BaseModel):
+    """Structured AI review result accepted by `sussed review save`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    score: int = Field(description="0-1000, 9999 for unicorn, -1 for scam/sus")
+    vibe: ReviewVibe
+    confidence: float = Field(ge=0.0, le=1.0)
+    recommendation: str = Field(min_length=1, max_length=40)
+    score_reason: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    red_flags: list[str] = Field(default_factory=list)
+    yellow_flags: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
+    hidden_costs: dict[str, int | None] = Field(default_factory=dict)
+    parking_price: int | None = Field(default=None, ge=0)
+    parking_included: bool | None = None
+    usable_area_m2: float | None = Field(default=None, gt=0)
+    photo_observations: list[str] = Field(default_factory=list)
+    reviewer_name: str = Field(min_length=1)
+    reviewer_model: str | None = None
+    reviewer_session: str | None = None
+    input_hash: str = Field(min_length=1)
+    reviewed_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
+    raw_review: dict[str, Any] | None = None
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, value: int) -> int:
+        """Allow normal scores and the two project-specific special values."""
+        if value in (-1, 9999):
+            return value
+        if 0 <= value <= 1000:
+            return value
+        raise ValueError("score must be -1, 0-1000, or 9999")

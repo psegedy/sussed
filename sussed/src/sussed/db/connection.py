@@ -4,7 +4,12 @@ Database connection management 🔌
 Async SQLAlchemy engine and session handling.
 """
 
-from collections.abc import AsyncGenerator
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -45,10 +50,10 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 @asynccontextmanager
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+async def get_session() -> AsyncGenerator[AsyncSession]:
     """
     Get an async database session.
-    
+
     Usage:
         async with get_session() as session:
             result = await session.execute(...)
@@ -66,7 +71,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 async def init_db() -> None:
     """
     Initialize the database - create all tables.
-    
+
     Call this once at startup.
     """
     engine = get_engine()

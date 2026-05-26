@@ -17,22 +17,6 @@ Imagine being **delulu** enough to manually refresh real estate portals in 2026.
 - **The Suss:** AI translates "vibrant neighborhood" to "loud AF" and "lots of potential" to "this place is falling apart."
 - **The Glow Up:** You get a clean notification (Discord/Telegram/Slack) only when a deal is valid.
 
-## 🔮 Future Configuration
-
-Define your "dream house" vibe in a yaml file:
-
-```yaml
-location: "Bratislava / Brno / Prague"
-budget: "Don't make me go broke"
-ai_agent:
-  model: "gpt-4o"
-  strictness: "savage"  # Don't show me mid stuff
-must_have:
-  - "Balcony for the aesthetic"
-  - "High ceilings for the aura"
-  - "No roommates (I'm in my solo era)"
-```
-
 ## �🚀 Quick Start
 
 ### Prerequisites
@@ -120,6 +104,31 @@ uv run sussed listings --format md --output listings.md
 | `-l, --limit` | Number of results | 20 |
 | `-f, --format` | Output format: table or md | table |
 | `-o, --output` | Write to file instead of stdout | stdout |
+
+### AI Reviewing Saved Listings
+
+`sussed` can prepare saved DB listings for review by Copilot CLI or Claude Code without storing an LLM API key in the app. The coding agent acts as the LLM (and vision) reviewer; `sussed` just persists structured results.
+
+Run `sussed enrich` first — it fetches descriptions **and** pre-warms the photo cache under `.sussed/image-cache/<listing-id>/`. `sussed review prepare` reads only from that cache and never downloads photos itself.
+
+```bash
+# Pre-warm descriptions + photo cache (rate limited, be patient)
+uv run sussed enrich --limit 10 --image-limit 5
+
+# See queue health (counts of pending/reviewed listings)
+uv run sussed review status
+
+# Get smart review candidates (ranked by priority)
+uv run sussed review candidates --limit 5
+
+# Prepare one listing (reads cached photos from .sussed/image-cache/)
+uv run sussed review prepare abcdef12 --output .sussed/image-cache/abcdef12-prepared.json
+
+# Save a structured AI review produced by the sussed-ai-review skill
+uv run sussed review save abcdef12 --input .sussed/image-cache/abcdef12-review.json
+```
+
+In Copilot CLI or Claude Code, invoke the `sussed-ai-review` skill to run this loop end-to-end. The skill uses the authenticated coding agent as the LLM/vision reviewer and `sussed` as the persistence layer — so no LLM API key ever lives inside the app.
 
 ### Getting Listing URLs
 

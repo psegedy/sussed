@@ -17,8 +17,6 @@ classifiers = [
 ]
 
 dependencies = [
-    # AI Agent Framework
-    "agno>=1.0.0",
     # Async HTTP client (because requests is mid)
     "httpx>=0.28.0",
     # Database
@@ -37,6 +35,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+llm = [
+    # AI Agent Framework
+    "agno>=1.0.0",
+]
+
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",

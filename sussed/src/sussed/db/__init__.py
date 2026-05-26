@@ -13,9 +13,6 @@ from sussed.db.models import (
 )
 
 __all__ = [
-    "init_db",
-    "close_db",
-    "get_session",
     "Listing",
     "ListingStatus",
     "ListingType",
@@ -24,4 +21,7 @@ __all__ = [
     "ScrapeRun",
     "SearchFilter",
     "VibeCheck",
+    "close_db",
+    "get_session",
+    "init_db",
 ]

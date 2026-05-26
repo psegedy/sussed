@@ -1,3 +1,15 @@
+# sussed simple example config 🧪
+#
+# A minimal SearchConfig for quick smoke testing of `sussed hunt`.
+# Copy + edit for your own search, or use search_config.yaml for a richer example.
+#
+# Usage:
+#   uv run sussed hunt --config simple_config.yaml
+#
+# Set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable the optional LLM pass
+# (use_llm + llm_analyze_top_n). Without keys, `hunt` still runs the
+# deterministic heuristic scoring on every listing.
+
 name: Simple Test Hunt
 description: Testing the hunt with LLM analysis
 

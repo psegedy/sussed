@@ -6,17 +6,18 @@ SQLModel models for PostgreSQL - the foundation of our data layer.
 
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal  # noqa: TC003
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Column, Text
+from sqlalchemy import CheckConstraint, Column, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
 
 class VibeCheck(str, Enum):
     """The sacred vibe classifications."""
+
     PEAK = "peak"
     VALID = "valid"
     MID = "mid"
@@ -26,12 +27,14 @@ class VibeCheck(str, Enum):
 
 class ListingType(str, Enum):
     """Sale or rent?"""
+
     SALE = "sale"
     RENT = "rent"
 
 
 class PropertyCategory(str, Enum):
     """Type of property."""
+
     APARTMENT = "apartment"
     HOUSE = "house"
     LAND = "land"
@@ -41,6 +44,7 @@ class PropertyCategory(str, Enum):
 
 class ListingStatus(str, Enum):
     """Is this listing still active?"""
+
     ACTIVE = "active"
     SOLD = "sold"
     REMOVED = "removed"
@@ -49,7 +53,11 @@ class ListingStatus(str, Enum):
 
 class Listing(SQLModel, table=True):
     """The main listing model."""
+
     __tablename__ = "listings"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_listing_source_external_id"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     source: str = Field(index=True)
@@ -81,6 +89,11 @@ class Listing(SQLModel, table=True):
     agency_id: str | None = Field(default=None)
     vibe_check: VibeCheck = Field(default=VibeCheck.UNKNOWN, index=True)
     ai_analysis: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    ai_score: int | None = Field(default=None, index=True)
+    ai_vibe: VibeCheck | None = Field(default=None, index=True)
+    ai_summary: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    ai_reviewed_at: datetime | None = Field(default=None, index=True)
+    ai_review_id: uuid.UUID | None = Field(default=None, index=True)
     status: ListingStatus = Field(default=ListingStatus.ACTIVE, index=True)
     first_seen_at: datetime = Field(default_factory=datetime.utcnow)
     last_seen_at: datetime = Field(default_factory=datetime.utcnow)
@@ -91,11 +104,13 @@ class Listing(SQLModel, table=True):
     updated_at_source: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    price_history: list["PriceHistory"] = Relationship(back_populates="listing")
+    price_history: list[PriceHistory] = Relationship(back_populates="listing")
+    reviews: list[ListingReview] = Relationship(back_populates="listing")
 
 
 class PriceHistory(SQLModel, table=True):
     """Track price changes over time."""
+
     __tablename__ = "price_history"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -109,8 +124,64 @@ class PriceHistory(SQLModel, table=True):
     listing: Listing = Relationship(back_populates="price_history")
 
 
+class ListingReview(SQLModel, table=True):
+    """Versioned AI review of a listing."""
+
+    __tablename__ = "listing_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "score = -1 OR score BETWEEN 0 AND 1000 OR score = 9999",
+            name="ck_listing_reviews_score_valid",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR confidence BETWEEN 0 AND 1",
+            name="ck_listing_reviews_confidence_range",
+        ),
+        CheckConstraint(
+            "parking_price IS NULL OR parking_price >= 0",
+            name="ck_listing_reviews_parking_price_non_negative",
+        ),
+        CheckConstraint(
+            "usable_area_m2 IS NULL OR usable_area_m2 > 0",
+            name="ck_listing_reviews_usable_area_positive",
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    listing_id: uuid.UUID = Field(foreign_key="listings.id", index=True)
+    reviewer_type: str = Field(default="skill", index=True)
+    reviewer_name: str = Field(index=True)
+    reviewer_model: str | None = Field(default=None)
+    reviewer_session: str | None = Field(default=None)
+    score: int = Field(index=True)
+    vibe: VibeCheck = Field(index=True)
+    confidence: Decimal | None = Field(default=None, ge=0, le=1, max_digits=4, decimal_places=3)
+    recommendation: str = Field(index=True)
+    score_reason: str = Field(sa_column=Column(Text, nullable=False))
+    summary: str = Field(sa_column=Column(Text, nullable=False))
+    red_flags: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    yellow_flags: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    highlights: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    hidden_costs: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
+    parking_price: int | None = Field(default=None, ge=0)
+    parking_included: bool | None = Field(default=None)
+    usable_area_m2: Decimal | None = Field(default=None, gt=0)
+    photo_observations: list[str] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
+    input_hash: str = Field(index=True)
+    raw_review: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    reviewed_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    listing: Listing = Relationship(back_populates="reviews")
+
+
 class ScrapeRun(SQLModel, table=True):
     """Track scraping runs for monitoring."""
+
     __tablename__ = "scrape_runs"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -125,19 +196,24 @@ class ScrapeRun(SQLModel, table=True):
     listings_removed: int = Field(default=0)
     price_changes_detected: int = Field(default=0)
     errors_count: int = Field(default=0)
-    error_details: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    error_details: dict[str, Any] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
     status: str = Field(default="running")
 
 
 class SearchFilter(SQLModel, table=True):
     """Saved search filters / user preferences."""
+
     __tablename__ = "search_filters"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
     cities: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     listing_type: ListingType | None = Field(default=None)
-    property_categories: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    property_categories: list[str] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
     apartment_types: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     price_min: int | None = Field(default=None)
     price_max: int | None = Field(default=None)

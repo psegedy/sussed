@@ -738,7 +738,6 @@ name = "sussed"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "agno" },
     { name = "asyncpg" },
     { name = "httpx" },
     { name = "loguru" },
@@ -760,10 +759,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+llm = [
+    { name = "agno" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "agno", specifier = ">=1.0.0" },
+    { name = "agno", marker = "extra == 'llm'", specifier = ">=1.0.0" },
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "loguru", specifier = ">=0.7.0" },
@@ -781,7 +783,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "typer", specifier = ">=0.15.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["llm", "dev"]
 
 [[package]]
 name = "typer"

@@ -27,24 +27,24 @@ async def run_scrape(
 ) -> dict:
     """
     Run a full scrape and store results in database.
-    
+
     Args:
         city: City to scrape (e.g., "brno", "praha")
         listing_type: "sale" or "rent"
         property_type: "apartment" or "house"
         max_pages: Maximum pages to scrape (None = all)
         max_age: Filter by listing age - "day", "week", "month" or None for all
-    
+
     Returns:
         Dict with scrape statistics
     """
     age_info = f", max_age={max_age}" if max_age else ""
     logger.info(f"🕷️ Starting scrape for {city} - {listing_type} {property_type}s{age_info}")
     start_time = datetime.utcnow()
-    
+
     # Initialize database
     await init_db()
-    
+
     # Stats
     stats = {
         "listings_found": 0,
@@ -53,14 +53,14 @@ async def run_scrape(
         "price_changes": 0,
         "errors": 0,
     }
-    
+
     scraper = SrealityScraper()
-    
+
     async with get_session() as session:
         # Create scrape run record
         run = await create_scrape_run(session, "sreality", city)
         await session.commit()
-        
+
         try:
             async for estate in scraper.scrape(
                 city=city,
@@ -70,12 +70,12 @@ async def run_scrape(
                 max_age=max_age,
             ):
                 try:
-                    listing, is_new, price_changed = await upsert_listing_from_sreality(
+                    _listing, is_new, price_changed = await upsert_listing_from_sreality(
                         session,
                         estate,
                         city_override=city.title(),  # Normalize city name
                     )
-                    
+
                     stats["listings_found"] += 1
                     if is_new:
                         stats["listings_new"] += 1
@@ -83,19 +83,19 @@ async def run_scrape(
                         stats["listings_updated"] += 1
                     if price_changed:
                         stats["price_changes"] += 1
-                    
+
                     # Commit every 50 listings to avoid huge transactions
                     if stats["listings_found"] % 50 == 0:
                         await session.commit()
                         logger.info(f"Progress: {stats['listings_found']} listings processed")
-                
+
                 except Exception as e:
                     logger.error(f"Error processing listing {estate.hash_id}: {e}")
                     stats["errors"] += 1
-            
+
             # Final commit
             await session.commit()
-            
+
             # Update scrape run
             await update_scrape_run(
                 session,
@@ -108,15 +108,15 @@ async def run_scrape(
                 status="completed",
             )
             await session.commit()
-            
+
         except Exception as e:
             logger.error(f"Scrape failed: {e}")
             await update_scrape_run(session, run, errors=1, status="failed")
             await session.commit()
             raise
-    
+
     duration = (datetime.utcnow() - start_time).total_seconds()
-    
+
     logger.info(
         f"✅ Scrape completed in {duration:.1f}s!\n"
         f"   Found: {stats['listings_found']}\n"
@@ -125,7 +125,7 @@ async def run_scrape(
         f"   Price changes: {stats['price_changes']}\n"
         f"   Errors: {stats['errors']}"
     )
-    
+
     return stats
 
 
