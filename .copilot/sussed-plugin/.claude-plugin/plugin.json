@@ -1,0 +1,17 @@
+{
+  "name": "sussed",
+  "description": "Skills for the sussed real-estate review CLI: drive sussed review prepare/save via Copilot CLI or Claude Code without LLM API keys",
+  "version": "0.1.0",
+  "author": {
+    "name": "psegedy"
+  },
+  "homepage": "https://github.com/psegedy/sussed",
+  "repository": "https://github.com/psegedy/sussed",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "sussed",
+    "real-estate",
+    "ai-review"
+  ]
+}
