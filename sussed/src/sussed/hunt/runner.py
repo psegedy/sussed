@@ -171,10 +171,24 @@ class AutonomousRunner:
         listings = await self._get_matching_listings()
 
         if not listings:
+            criteria = self.config.criteria
+            city = criteria.city or "brno"
+            ptype = criteria.property_type or "apartment"
             console.print(
-                "[yellow]No listings found matching criteria. Try scraping first![/yellow]"
+                "[yellow]No listings found matching criteria.[/yellow]"
             )
-            console.print("   Run: [cyan]uv run sussed scrape -c brno -m 5[/cyan]")
+            console.print(
+                "   [dim]If you haven't scraped this property type yet, re-run with --scrape:[/dim]"
+            )
+            console.print(
+                f"   [cyan]uv run sussed hunt -c {self.config.name.lower().replace(' ', '_') or 'your'}_config.yaml --scrape[/cyan]"
+            )
+            console.print(
+                f"   [dim]Or scrape manually:[/dim] [cyan]uv run sussed scrape -c {city} -p {ptype} -m 5[/cyan]"
+            )
+            console.print(
+                "   [dim]If you already scraped, your filters may be too strict (try loosening require_*, min_area_m2, max_price).[/dim]"
+            )
             return []
 
         console.print(f"[green]Found {len(listings)} listings matching criteria[/green]\n")
