@@ -29,6 +29,18 @@ class PreparedListingReview(BaseModel):
     url: str
     price_czk: int
     price_per_m2: int | None = None
+    initial_price: int | None = Field(
+        default=None,
+        description="First price ever recorded for this listing (None if no history).",
+    )
+    original_price: int | None = Field(
+        default=None,
+        description="Last non-POA price before listing went POA. Set only when current price is POA.",
+    )
+    price_dropped_to_poa: bool = Field(
+        default=False,
+        description="True if listing currently is POA (≤10 CZK) and had a prior real price.",
+    )
     listing_type: str | None = None
     city: str
     district: str | None = None

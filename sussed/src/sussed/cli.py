@@ -465,6 +465,179 @@ def listings(
 
 
 @app.command()
+def drops(
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-l",
+        help="Max number of listings to show",
+    ),
+    days: int | None = typer.Option(
+        None,
+        "--days",
+        "-d",
+        help="Only show drops from the last N days",
+    ),
+    city: str | None = typer.Option(
+        None,
+        "--city",
+        "-c",
+        help="Filter by city",
+    ),
+    apartment_type: str | None = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter by apartment type (e.g. 2+kk)",
+    ),
+    to_poa_only: bool = typer.Option(
+        False,
+        "--to-poa",
+        help="Only show listings that dropped to POA / 1 Kč (seller hiding new price)",
+    ),
+) -> None:
+    """Show listings where price has dropped 📉
+
+    Lists every active listing that has recorded a price decrease, sorted by
+    most recent drop first. Includes drops to POA (Price on Request), which
+    usually signal an in-progress negotiation or a hidden price hike.
+    """
+
+    async def _get_drops() -> list[dict]:
+        from datetime import datetime, timedelta
+
+        from sqlalchemy import and_, desc, func, select
+        from sqlalchemy.orm import aliased
+        from sqlmodel.ext.asyncio.session import AsyncSession  # noqa: F401
+
+        from sussed.db.connection import get_session
+        from sussed.db.models import Listing, ListingStatus, PriceHistory
+
+        async with get_session() as session:
+            # Subquery: most-recent decrease per listing
+            ph_alias = aliased(PriceHistory)
+            latest_drop_sq = (
+                select(
+                    ph_alias.listing_id.label("lid"),
+                    func.max(ph_alias.recorded_at).label("max_recorded"),
+                )
+                .where(ph_alias.change_type == "decrease")
+                .group_by(ph_alias.listing_id)
+                .subquery()
+            )
+
+            conditions = [
+                Listing.id == latest_drop_sq.c.lid,
+                Listing.status == ListingStatus.ACTIVE,
+                PriceHistory.listing_id == latest_drop_sq.c.lid,
+                PriceHistory.recorded_at == latest_drop_sq.c.max_recorded,
+            ]
+            if city:
+                conditions.append(Listing.city.ilike(f"%{city}%"))
+            if apartment_type:
+                conditions.append(Listing.apartment_type == apartment_type)
+            if days:
+                cutoff = datetime.utcnow() - timedelta(days=days)
+                conditions.append(PriceHistory.recorded_at >= cutoff)
+            if to_poa_only:
+                conditions.append(Listing.price_czk <= 10)
+
+            stmt = (
+                select(Listing, PriceHistory)
+                .select_from(latest_drop_sq)
+                .join(Listing)
+                .join(PriceHistory)
+                .where(and_(*conditions))
+                .order_by(desc(latest_drop_sq.c.max_recorded))
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+
+            # For each listing, also find the price right before the drop so
+            # we can show before/after — that's the price_czk of the next-older
+            # PriceHistory entry (or the "initial" entry if there's only one).
+            rows: list[dict] = []
+            for listing, drop in result.all():
+                before_stmt = (
+                    select(PriceHistory.price_czk)
+                    .where(
+                        PriceHistory.listing_id == listing.id,
+                        PriceHistory.recorded_at < drop.recorded_at,
+                    )
+                    .order_by(desc(PriceHistory.recorded_at))
+                    .limit(1)
+                )
+                before_result = await session.execute(before_stmt)
+                before_price = before_result.scalar_one_or_none()
+                # Fallback: derive from change_amount if no prior row exists.
+                if before_price is None and drop.change_amount:
+                    before_price = drop.price_czk + drop.change_amount
+
+                rows.append(
+                    {
+                        "listing": listing,
+                        "before_price": before_price,
+                        "after_price": drop.price_czk,
+                        "change_amount": drop.change_amount,
+                        "change_percent": float(drop.change_percent)
+                        if drop.change_percent is not None
+                        else None,
+                        "drop_date": drop.recorded_at,
+                    }
+                )
+            return rows
+
+    try:
+        results = asyncio.run(_get_drops())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    if not results:
+        console.print("[yellow]No price drops found matching those filters.[/yellow]")
+        return
+
+    console.print(f"\n[bold green]📉 {len(results)} price drops[/bold green]\n")
+
+    for i, r in enumerate(results, 1):
+        listing = r["listing"]
+        before = r["before_price"]
+        after = r["after_price"]
+
+        after_str = "[bold yellow]POA[/bold yellow]" if after <= 10 else f"{after:,} Kč"
+        before_str = f"{before:,} Kč" if before else "—"
+
+        if before and before > 10 and after <= 10:
+            delta_str = "[bold yellow](seller hiding new price)[/bold yellow]"
+        elif r["change_percent"] is not None:
+            delta_str = f"[green]-{r['change_percent']:.1f}%[/green]"
+        elif r["change_amount"]:
+            delta_str = f"[green]-{r['change_amount']:,} Kč[/green]"
+        else:
+            delta_str = ""
+
+        location = listing.city or ""
+        if listing.district:
+            location = f"{listing.district}, {location}"
+
+        drop_date = r["drop_date"].strftime("%Y-%m-%d")
+        posted = listing.first_seen_at.strftime("%Y-%m-%d") if listing.first_seen_at else "—"
+        apt = listing.apartment_type or "-"
+
+        console.print(
+            f"[bold cyan]#{i}[/bold cyan] [bold]{apt}[/bold] · {location}"
+        )
+        console.print(
+            f"    [dim]Price:[/dim] {before_str} [bold]→[/bold] {after_str}  {delta_str}"
+        )
+        console.print(
+            f"    [dim]Drop: {drop_date} · Posted: {posted}[/dim]"
+        )
+        console.print(f"    [blue]{listing.url}[/blue]")
+        console.print()
+
+
+@app.command()
 def url(
     listing_id: str = typer.Argument(
         ...,
@@ -862,13 +1035,13 @@ def hunt(
 
         # Rescore all listings if requested
         if rescore:
-            search_config.agent.skip_already_scored = False
+            search_config.runner.skip_already_scored = False
             console.print("[yellow]🔄 Rescore mode: will re-score all listings[/yellow]")
 
         # Enable auto-scrape if requested via CLI
         if scrape:
-            search_config.agent.auto_scrape = True
-            search_config.agent.scrape_max_pages = scrape_pages
+            search_config.runner.auto_scrape = True
+            search_config.runner.scrape_max_pages = scrape_pages
             console.print(
                 f"[cyan]🕷️ Will scrape up to {scrape_pages} pages of fresh data first[/cyan]"
             )
@@ -1211,6 +1384,11 @@ def review_picks(
         None, "--district", "-d", help="Filter by district name (fuzzy)"
     ),
     min_score: int | None = typer.Option(None, "--min-score", "-m", help="Minimum AI score"),
+    max_age_days: int | None = typer.Option(
+        None,
+        "--max-age-days",
+        help="Only include listings first seen within N days",
+    ),
     limit: int = typer.Option(20, "--limit", "-l", min=1, max=200, help="Max results"),
     format_output: str = typer.Option(
         "table", "--format", "-f", help="Output format: table or json"
@@ -1234,6 +1412,9 @@ def review_picks(
         # Only high scorers
         uv run sussed review picks --min-score 700
 
+        # Only listings posted in the last week
+        uv run sussed review picks --max-age-days 7
+
         # JSON output
         uv run sussed review picks -f json
     """
@@ -1248,6 +1429,7 @@ def review_picks(
                 include_unreviewed=all_listings,
                 district=district,
                 min_score=min_score,
+                max_age_days=max_age_days,
                 limit=limit,
             )
             return [
@@ -1269,6 +1451,9 @@ def review_picks(
                     ),
                     "parking_included": (
                         listing.ai_analysis.get("parking_included") if listing.ai_analysis else None
+                    ),
+                    "usable_area_m2": (
+                        listing.ai_analysis.get("usable_area_m2") if listing.ai_analysis else None
                     ),
                     "updated_at_source": listing.updated_at_source.isoformat() if listing.updated_at_source else None,
                     "first_seen_at": listing.first_seen_at.isoformat() if listing.first_seen_at else None,
@@ -1331,8 +1516,18 @@ def review_picks(
         emoji = score_emoji(score if isinstance(score, int) else None)
         vibe = vibe_emoji(row.get("ai_vibe") if isinstance(row.get("ai_vibe"), str | None) else None)
         price_fmt = f"{row['price_czk']:,}" if row["price_czk"] else "N/A"
-        m2_fmt = f"{row['price_per_m2']:,}" if row.get("price_per_m2") else "N/A"
-        area_fmt = f"{row['area_m2']:.0f}" if row.get("area_m2") else "N/A"
+
+        # If AI computed a corrected usable area, show TRUE price/m² and mark with "*"
+        usable = row.get("usable_area_m2")
+        parking = row.get("parking_price") or 0
+        if usable and row["price_czk"]:
+            true_price_per_m2 = int((row["price_czk"] + parking) / float(usable))
+            m2_fmt = f"[bold]{true_price_per_m2:,}*[/bold]"
+            area_fmt = f"[bold]{float(usable):.0f}*[/bold]"
+        else:
+            m2_fmt = f"{row['price_per_m2']:,}" if row.get("price_per_m2") else "N/A"
+            area_fmt = f"{row['area_m2']:.0f}" if row.get("area_m2") else "N/A"
+
         source_date = row.get("updated_at_source") or row.get("first_seen_at")
         source_date_fmt = source_date[:10] if isinstance(source_date, str) else "—"
         score_str = f"{emoji} {score}" if score is not None else f"{emoji} —"
@@ -1351,7 +1546,10 @@ def review_picks(
         )
 
     console.print(table)
-    console.print(f"\n[dim]Showing {len(results)} listings[/dim]")
+    console.print(
+        f"\n[dim]Showing {len(results)} listings. "
+        "Bold * = AI-corrected usable area (incl. parking in price/m²)[/dim]"
+    )
 
 
 if __name__ == "__main__":

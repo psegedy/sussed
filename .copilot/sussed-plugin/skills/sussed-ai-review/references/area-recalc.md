@@ -1,0 +1,64 @@
+# Recalculating Usable Area & True Price/m² 📐
+
+Reference for the `sussed-ai-review` skill area-correction step.
+
+Many sellers inflate the advertised total area by lumping in **terrace, balcony, loggia, cellar, or garden**. The portal's `price_per_m2` can therefore be misleadingly low — but don't go full conspiracy board for normal-sized flats.
+
+## When to trigger
+
+Attempt this correction **only when the total advertised area is clearly oversized for the apartment type**:
+
+| Type | Suspicious if total advertised area is |
+|---|---|
+| `1+kk` | >35 m² |
+| `1+1` | >45 m² |
+| `2+kk` | >65 m² |
+| `2+1` | >65 m² |
+| `3+kk` | >90 m² |
+| `3+1` | >100 m² |
+| `4+kk` / `4+1` | >120 m² |
+
+If the total is within the normal range, **do not** flag area or punish missing room-by-room m² breakdowns. Leave `usable_area_m2` as `null` unless the prepared payload explicitly gives `Užitná plocha` / `Podlahová plocha`.
+
+## Step 1 — Find separate area mentions
+
+When the total exceeds the threshold, look in both `description` and `detail_items` for separate non-living-space areas:
+
+| Czech label | What it is | Exclude from usable? |
+|---|---|---|
+| `Terasa` | Terrace | ✅ yes |
+| `Balkon` | Balcony | ✅ yes |
+| `Lodžie` | Loggia | ✅ yes |
+| `Sklep` | Cellar | ✅ yes |
+| `Plocha zahrady` | Garden | ✅ yes |
+| `Garáž` / `Parkovací stání` | Parking | ✅ yes |
+| `Užitná plocha` | Usable/living area | ❌ this IS the answer if present |
+| `Podlahová plocha` | Floor area (living) | ❌ this IS the answer if present |
+
+`detail_items` entries look like `{"name": "Terasa", "value": "32", "type": "area"}`.
+
+## Step 2 — Compute `usable_area_m2`
+
+Priority order:
+
+1. **Only act when total area exceeds the threshold** for the apartment type.
+2. **Prefer an explicit `Užitná plocha` / `Podlahová plocha`** value from `detail_items` — that's the seller's own usable-area number.
+3. **Otherwise subtract** balcony + terrace + loggia + cellar + garden + parking from the advertised total area when those separate m² values are present.
+4. **If you can't tell** (no separate areas mentioned and no explicit usable value), leave `usable_area_m2` as `null` — don't guess.
+
+## Step 3 — Call out the correction in your review
+
+When the corrected area changes the price/m² meaningfully (>5%), make it visible:
+
+- Add to `yellow_flags`: `"Advertised 97 m² includes 32 m² terrace; real usable area ~65 m²"`
+- Add to `score_reason`: `"True price/m² ≈ 132,800 Kč (advertised 85,360 Kč). Inflated area hides ~55% premium per usable m²."`
+- If `parking_price` is known, factor it in too: `true_price_per_m2 = (price_czk + parking_price) / usable_area_m2`
+
+## Step 4 — Worked example
+
+Listing: `8,280,000 Kč`, advertised `97 m²`, `Terasa 32 m²` in `detail_items`, parking `350,000 Kč` extra.
+
+- `usable_area_m2` = 97 − 32 = **65**
+- Advertised price/m² = 8,280,000 / 97 = 85,360 Kč
+- True price/m² = (8,280,000 + 350,000) / 65 = **132,769 Kč**
+- That's a **+55%** correction — add a `yellow_flags` entry, explain the true math, and score based on the corrected economics. It is not automatically a `red_flags` entry.

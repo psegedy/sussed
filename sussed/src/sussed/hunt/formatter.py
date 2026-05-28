@@ -188,7 +188,7 @@ def display_table(
 
     table.add_column("Score", style="cyan", justify="right", width=6)
     table.add_column("Type", width=6)
-    table.add_column("Price", justify="right", width=12)
+    table.add_column("Price", justify="right", width=22)
     table.add_column("m²", justify="right", width=5)
     table.add_column("Location", width=20)
     table.add_column("Highlights", width=35)
@@ -206,21 +206,21 @@ def display_table(
         else:
             score_str = f"[red]{score}[/red]"
 
-        # Price display (handle POA)
+        # Price display (handle POA + price drops)
+        price = r.get("price_czk", 0)
+        initial = r.get("initial_price")
+        original = r.get("original_price")
         if r.get("is_poa"):
-            if r.get("original_price"):
-                price_str = f"[dim]POA[/dim] ({r['original_price']:,})"
+            if original:
+                price_str = f"[dim]POA[/dim] [red]↓[/red] {original:,}"
             else:
                 price_str = "[dim]POA[/dim]"
+        elif initial and initial > poa_price_threshold and initial != price:
+            diff = price - initial
+            arrow = "[green]↓[/green]" if diff < 0 else "[red]↑[/red]"
+            price_str = f"{price:,} {arrow} {initial:,}"
         else:
-            price = r.get("price_czk", 0)
-            initial = r.get("initial_price", price)
-            if initial and initial > 10 and initial != price:
-                diff = price - initial
-                arrow = "↓" if diff < 0 else "↑"
-                price_str = f"{price:,} {arrow}"
-            else:
-                price_str = f"{price:,}"
+            price_str = f"{price:,}"
 
         highlights = r.get("analysis", {}).get("highlights", [])
         highlights_str = ", ".join(highlights[:3])
@@ -266,15 +266,17 @@ def display_table(
 
             # Price info
             if r.get("is_poa"):
-                if r.get("original_price"):
-                    orig = r["original_price"]
+                orig = r.get("original_price")
+                if orig:
                     area = r.get("area_m2")
                     if area and area > 0:
                         console.print(
-                            f"   💰 Price: [dim]POA[/dim] (was {orig:,} Kč / {int(orig / area):,} Kč/m²)"
+                            f"   💰 Price: [dim]POA[/dim] [bold red]⚠ dropped from {orig:,} Kč[/bold red] ({int(orig / area):,} Kč/m²)"
                         )
                     else:
-                        console.print(f"   💰 Price: [dim]POA[/dim] (was {orig:,} Kč)")
+                        console.print(
+                            f"   💰 Price: [dim]POA[/dim] [bold red]⚠ dropped from {orig:,} Kč[/bold red]"
+                        )
                 else:
                     console.print("   💰 Price: [dim]POA (Price on Request)[/dim]")
             else:
@@ -285,21 +287,39 @@ def display_table(
                 else:
                     console.print(f"   💰 Price: {price:,} Kč")
 
-            # Price change info
+            # Price change info — show the journey from initial to current
             price_changes = r.get("price_changes", [])
             if price_changes:
                 initial = r.get("initial_price", 0)
                 current = r.get("price_czk", 0)
-                # Show total change from initial to current (skip if POA on either end)
-                if initial > poa_price_threshold and current > poa_price_threshold:
+                current_is_poa = current <= poa_price_threshold
+                initial_is_poa = initial <= poa_price_threshold
+
+                if not current_is_poa and not initial_is_poa and initial != current:
+                    # Standard price change between two real prices
                     diff = current - initial
-                    if diff != 0:
-                        pct = (diff / initial) * 100
-                        arrow = "📉" if diff < 0 else "📈"
-                        color = "green" if diff < 0 else "red"
-                        console.print(
-                            f"   {arrow} [{color}]Price change: {diff:+,} Kč ({pct:+.1f}%) from {initial:,} Kč[/{color}]"
-                        )
+                    pct = (diff / initial) * 100
+                    arrow = "📉" if diff < 0 else "📈"
+                    color = "green" if diff < 0 else "red"
+                    console.print(
+                        f"   {arrow} [{color}]Price change: {diff:+,} Kč ({pct:+.1f}%) from {initial:,} Kč[/{color}]"
+                    )
+                elif current_is_poa and not initial_is_poa:
+                    # Dropped to POA — this is a strong "negotiation mode" / "sus" signal
+                    console.print(
+                        f"   📉 [bold yellow]Switched to POA from {initial:,} Kč — seller hiding new price[/bold yellow]"
+                    )
+                elif not current_is_poa and initial_is_poa:
+                    # Was POA, now has a real price
+                    console.print(
+                        f"   📢 [cyan]Price revealed: {current:,} Kč (was POA)[/cyan]"
+                    )
+
+                # Show count of changes when more than one
+                if len(price_changes) > 1:
+                    console.print(
+                        f"   [dim]({len(price_changes)} price changes recorded)[/dim]"
+                    )
 
             # Listing dates — sreality only exposes "Aktualizace" (modified),
             # not "Vloženo" (created). Show approximate listed date from the
@@ -362,7 +382,22 @@ def display_markdown(config: SearchConfig, results: list[dict[str, Any]]) -> Non
         score = r.get("score", 0)
         analysis = r.get("analysis", {})
 
-        price_display = "POA" if r.get("is_poa") else f"{r.get('price_czk', 0):,} Kč"
+        # Price display with drop awareness
+        price = r.get("price_czk", 0)
+        initial = r.get("initial_price")
+        original = r.get("original_price")
+        if r.get("is_poa"):
+            if original:
+                price_display = f"**POA** (⚠ dropped from {original:,} Kč)"
+            else:
+                price_display = "**POA** (Price on Request)"
+        elif initial and initial > 10 and initial != price:
+            diff = price - initial
+            arrow = "↓" if diff < 0 else "↑"
+            pct = (diff / initial) * 100
+            price_display = f"{price:,} Kč {arrow} (was {initial:,} Kč, {pct:+.1f}%)"
+        else:
+            price_display = f"{price:,} Kč"
 
         lines.extend(
             [

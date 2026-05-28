@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from sussed.hunt.config import AgentConfig, ScoringWeights, SearchConfig, SearchCriteria
+from sussed.hunt.config import RunnerConfig, ScoringWeights, SearchConfig, SearchCriteria
 from sussed.hunt.runner import AutonomousRunner
 from sussed.hunt.scorer import score_listing
 
@@ -59,7 +59,7 @@ async def test_score_listing_adds_new_building_bonus() -> None:
         poa_price_threshold=1,
     )
 
-    assert result["score"] == 623
+    assert result["score"] == 523
     assert "Novostavba (+123)" in result["highlights"]
 
 
@@ -82,9 +82,9 @@ async def test_score_listing_adds_reconstruction_bonus_and_new_building_takes_pr
         poa_price_threshold=1,
     )
 
-    assert reconstructed["score"] == 570
+    assert reconstructed["score"] == 470
     assert "Po rekonstrukci (+70)" in reconstructed["highlights"]
-    assert both["score"] == 620
+    assert both["score"] == 520
     assert "Novostavba (+120)" in both["highlights"]
     assert "Po rekonstrukci (+70)" not in both["highlights"]
 
@@ -102,12 +102,14 @@ async def test_score_listing_adds_very_good_condition_bonus() -> None:
         poa_price_threshold=1,
     )
 
-    assert result["score"] == 580
+    assert result["score"] == 480
     assert "Velmi dobrý stav (+80)" in result["highlights"]
 
 
 @pytest.mark.asyncio
-async def test_score_listing_rejects_panel_building_when_configured() -> None:
+async def test_score_listing_penalizes_panel_building_when_reject_configured() -> None:
+    """reject_panel_building no longer hard-rejects to -1 — it applies a -150
+    penalty so the listing stays visible but ranked low."""
     config = SearchConfig(
         criteria=SearchCriteria(reject_panel_building=True),
     )
@@ -119,9 +121,10 @@ async def test_score_listing_rejects_panel_building_when_configured() -> None:
         poa_price_threshold=1,
     )
 
-    assert result["score"] == -1
-    assert result["reasons"] == ["Auto-rejected: panel building"]
-    assert result["red_flags"] == ["🚫 Panel building (paneláky reject)"]
+    # Minimal listing baseline 400 + REJECT_PENALTY -150 + default penalty_panel -100 = 150
+    assert result["score"] == 150
+    assert any("Panel building (paneláky reject)" in flag for flag in result["red_flags"])
+    assert any("Panel building (-100)" in flag for flag in result["red_flags"])
 
 
 @pytest.mark.asyncio
@@ -137,8 +140,8 @@ async def test_score_listing_soft_penalizes_missing_required_elevator() -> None:
         poa_price_threshold=1,
     )
 
-    assert result["score"] == 450
-    assert "Missing elevator (required)" in result["red_flags"]
+    assert result["score"] == 300
+    assert "Missing elevator (required)" in result["red_flags"][0]
 
 
 @pytest.mark.asyncio
@@ -155,12 +158,12 @@ async def test_score_listing_penalizes_panel_building_when_not_rejected() -> Non
         poa_price_threshold=1,
     )
 
-    assert result["score"] == 425
+    assert result["score"] == 325
     assert "Panel building (-75)" in result["red_flags"]
 
 
-def test_agent_config_enrich_top_n_default() -> None:
-    config = AgentConfig()
+def test_runner_config_enrich_top_n_default() -> None:
+    config = RunnerConfig()
 
     assert config.enrich_top_n == 5
 
@@ -169,7 +172,7 @@ def test_agent_config_enrich_top_n_default() -> None:
 async def test_runner_uses_enrich_top_n_for_first_description_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     config = SearchConfig(
         output={"limit": 20},
-        agent={
+        runner={
             "fetch_descriptions": True,
             "enrich_top_n": 2,
             "use_llm": False,

@@ -130,6 +130,73 @@ uv run sussed review save abcdef12 --input .sussed/image-cache/abcdef12-review.j
 
 In Copilot CLI or Claude Code, invoke the `sussed-ai-review` skill to run this loop end-to-end. The skill uses the authenticated coding agent as the LLM/vision reviewer and `sussed` as the persistence layer — so no LLM API key ever lives inside the app.
 
+### Autonomous Hunt Mode 🎯
+
+The `hunt` command scores and ranks listings based on a YAML config file. It runs heuristic scoring on all listings, optionally enriches top candidates with descriptions, and can use an LLM for deeper analysis.
+
+```bash
+# Generate an example config file
+uv run sussed hunt --generate-config
+
+# Run with your config
+uv run sussed hunt -c my_search.yaml
+
+# Scrape fresh data first, then hunt (recommended!)
+uv run sussed hunt -c my_search.yaml --scrape
+
+# Show top 5 best picks
+uv run sussed hunt -c my_search.yaml --best 5
+
+# Show trash/sus listings
+uv run sussed hunt -c my_search.yaml --trash 10
+
+# Show only gems (score >= 900)
+uv run sussed hunt --gems
+
+# Re-score everything from scratch
+uv run sussed hunt --rescore
+
+# Save results as JSON
+uv run sussed hunt --best 10 -f json -s results.json
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-c, --config` | Path to search config YAML | search_config.yaml |
+| `-b, --best` | Show top N highest scored | config default |
+| `-t, --trash` | Show bottom N (overpriced/sus) | — |
+| `-g, --gems` | Show only gems (score >= 900) | false |
+| `-f, --format` | Output format: table, json, markdown | table |
+| `-s, --save` | Save results to file | stdout |
+| `-r, --rescore` | Re-score all listings | false |
+| `--scrape` | Scrape fresh data before hunting | false |
+| `-p, --scrape-pages` | Max pages to scrape | 5 |
+| `-v, --verbose` | Enable debug logging | false |
+| `--generate-config` | Generate example config and exit | — |
+
+### Price Drops 📉
+
+Show every active listing that has had a price decrease, sorted by most-recent drop. Catches both regular decreases AND the sneaky "switched to POA" case where the seller hides the new price.
+
+```bash
+# All recent drops (default 20)
+uv run sussed drops
+
+# Only drops to POA / 1 Kč (seller hiding new price)
+uv run sussed drops --to-poa
+
+# Last 7 days, 2+kk only, in Brno
+uv run sussed drops --days 7 --type 2+kk --city brno
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-l, --limit` | Max listings to show | 20 |
+| `-d, --days` | Only drops in last N days | all |
+| `-c, --city` | Filter by city | all |
+| `-t, --type` | Filter by apartment type | all |
+| `--to-poa` | Only listings that dropped to POA | false |
+
 ### Getting Listing URLs
 
 ```bash
@@ -156,16 +223,7 @@ uv run sussed --help     # Show help
 
 ## 🛠 Configuration
 
-Copy `.env.example` to `.env` and configure:
-
-```bash
-cp .env.example .env
-```
-
-```ini
-DATABASE_URL=postgresql+asyncpg://sussed:sussed_dev_password@localhost:5432/sussed
-SCRAPE_RATE_LIMIT=1.0  # Requests per second (don't be a dick)
-```
+All settings have sensible defaults out of the box. See [docs/configuration.md](sussed/docs/configuration.md) for the full reference covering environment variables and YAML search config fields.
 
 ## 📊 Data Sources
 

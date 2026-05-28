@@ -59,11 +59,9 @@ class SearchCriteria(BaseModel):
     )
     avoid_ground_floor: bool = Field(default=False, description="Skip ground floor listings")
     avoid_top_floor: bool = Field(default=False, description="Skip top floor listings")
-
     # Must-have features
     require_parking: bool = Field(default=False, description="Must have parking/garage")
     require_balcony: bool = Field(default=False, description="Must have balcony/loggia/terrace")
-    require_cellar: bool = Field(default=False, description="Must have cellar/storage")
     require_elevator: bool = Field(default=False, description="Building must have elevator")
 
     # Red flags to auto-reject
@@ -110,42 +108,9 @@ class ScoringWeights(BaseModel):
     """
     Customize what matters most in scoring.
 
-    Higher weight = more important in final score.
-    Default weights are balanced for typical buyer.
+    Bonus/penalty modifiers applied during heuristic scoring.
     """
 
-    price_vs_market: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="How much does price vs market average matter",
-    )
-    location_quality: float = Field(
-        default=0.25,
-        ge=0.0,
-        le=1.0,
-        description="How much does location/district matter",
-    )
-    features_match: float = Field(
-        default=0.2,
-        ge=0.0,
-        le=1.0,
-        description="How much does having required features matter",
-    )
-    listing_quality: float = Field(
-        default=0.15,
-        ge=0.0,
-        le=1.0,
-        description="Photos, floor plan, description quality",
-    )
-    age_condition: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Building age and condition",
-    )
-
-    # Special scoring modifiers
     bonus_new_building: int = Field(
         default=100,
         description="Bonus points for new construction",
@@ -159,8 +124,16 @@ class ScoringWeights(BaseModel):
         description="Bonus when building_condition is 'Velmi dobrý' or similar high-quality state",
     )
     penalty_no_parking: int = Field(
-        default=-50,
+        default=-100,
         description="Penalty when parking is required but missing",
+    )
+    penalty_no_balcony: int = Field(
+        default=-100,
+        description="Penalty when balcony/loggia/terrace is required but missing",
+    )
+    penalty_no_elevator: int = Field(
+        default=-100,
+        description="Penalty when elevator is required but missing",
     )
     penalty_panel: int = Field(
         default=-100,
@@ -199,10 +172,6 @@ class OutputConfig(BaseModel):
         default=True,
         description="Include AI analysis in output",
     )
-    include_description: bool = Field(
-        default=False,
-        description="Include full description (verbose)",
-    )
     format: str = Field(
         default="table",
         description="Output format: table, json, or markdown",
@@ -213,11 +182,11 @@ class OutputConfig(BaseModel):
     )
 
 
-class AgentConfig(BaseModel):
+class RunnerConfig(BaseModel):
     """
-    Agent behavior configuration.
+    Hunt runner behavior configuration.
 
-    Controls how autonomous the agent is.
+    Controls processing limits, LLM analysis, scraping, and POA handling.
     """
 
     # Processing limits
@@ -262,10 +231,6 @@ class AgentConfig(BaseModel):
     )
 
     # Price handling
-    treat_1kc_as_poa: bool = Field(
-        default=True,
-        description="Treat 1 Kč price as 'Price On Request' - don't penalize, analyze description instead",
-    )
     poa_evaluation_mode: str = Field(
         default="description_only",
         description="How to evaluate POA listings: description_only, skip, or estimate",
@@ -301,7 +266,7 @@ class SearchConfig(BaseModel):
     criteria: SearchCriteria = Field(default_factory=SearchCriteria)
     scoring: ScoringWeights = Field(default_factory=ScoringWeights)
     output: OutputConfig = Field(default_factory=OutputConfig)
-    agent: AgentConfig = Field(default_factory=AgentConfig)
+    runner: RunnerConfig = Field(default_factory=RunnerConfig)
 
     # Custom notes for the AI agent
     notes_for_agent: str | None = Field(
@@ -374,19 +339,15 @@ class SearchConfig(BaseModel):
                 min_photos=5,
                 exclude_description_keywords="dražba, exekuce, aukce",
             ),
-            scoring=ScoringWeights(
-                price_vs_market=0.35,
-                location_quality=0.25,
-            ),
+            scoring=ScoringWeights(),
             output=OutputConfig(
                 mode=OutputMode.BEST,
                 limit=10,
                 include_analysis=True,
             ),
-            agent=AgentConfig(
+            runner=RunnerConfig(
                 max_listings_to_process=30,
                 fetch_descriptions=True,
-                treat_1kc_as_poa=True,
             ),
             notes_for_agent=(
                 "I prefer quiet neighborhoods, ideally close to a park or green space. "

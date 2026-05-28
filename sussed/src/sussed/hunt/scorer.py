@@ -78,7 +78,7 @@ async def score_listing(
     criteria = config.criteria
     scoring = config.scoring
 
-    score = 500  # Start at average
+    score = 400  # Start near "average" with room for differentiation
     reasons = []
     red_flags = []
     highlights = []
@@ -86,69 +86,79 @@ async def score_listing(
     description = listing.get("description") or ""
     desc_lower = description.lower()
 
-    # === HARD REJECTS ===
+    # === SIGNIFICANT PENALTIES (no auto-reject — listings stay visible) ===
+    # Previously these returned score=-1 (hard reject). Now they apply a
+    # large penalty so the listing is heavily demoted but still visible in
+    # results, so the user can see what was filtered and why.
+    REJECT_PENALTY = -150
+
     exclude_kws = criteria.get_exclude_keywords()
     if exclude_kws and desc_lower:
         for keyword in exclude_kws:
             if keyword in desc_lower:
-                return {
-                    "score": -1,
-                    "reasons": [f"Auto-rejected: description contains '{keyword}'"],
-                    "highlights": [],
-                    "red_flags": [f"🚫 Excluded keyword: '{keyword}'"],
-                }
+                score += REJECT_PENALTY
+                red_flags.append(f"🚫 Excluded keyword: '{keyword}' ({REJECT_PENALTY})")
+                reasons.append(f"Excluded keyword '{keyword}' triggers {REJECT_PENALTY} penalty")
+                break  # one penalty per listing even if multiple keywords match
 
     if criteria.reject_panel_building and features_dict.get("panel"):
-        return {
-            "score": -1,
-            "reasons": ["Auto-rejected: panel building"],
-            "highlights": [],
-            "red_flags": ["🚫 Panel building (paneláky reject)"],
-        }
+        score += REJECT_PENALTY
+        red_flags.append(f"🚫 Panel building (paneláky reject) ({REJECT_PENALTY})")
+        reasons.append(f"Panel building triggers {REJECT_PENALTY} penalty (reject_panel_building=true)")
 
-    # === DESCRIPTION BONUS ===
-    # Having a description at all is valuable for analysis
-    has_description = bool(description)
-    if has_description:
-        score += 20  # Bonus for having analyzable description
-        highlights.append("Has description")
+    # Track which feature signals were already counted so we don't
+    # double-score them via description keyword matches later.
+    counted_feature_keys: set[str] = set()
+    # === PRICE ANALYSIS ===
+    # For POA listings with a known prior price, use that for market comparison
+    # so they don't get unfairly demoted into invisibility. The drop itself is
+    # a strong signal — surface it.
+    original_price = listing.get("original_price")
+    area_m2_val = listing.get("area_m2")
 
-    # === PRICE ANALYSIS (skip for POA) ===
-    if is_poa:
+    if is_poa and original_price and area_m2_val and area_m2_val > 0:
+        effective_price_per_m2 = int(original_price / float(area_m2_val))
+        # Flag the drop and don't penalize the missing current price.
+        reasons.append(
+            f"Price dropped to POA — using prior price {original_price:,} Kč for scoring"
+        )
+        red_flags.append("⚠ Switched to POA (seller may be in negotiation)")
+        do_price_analysis = True
+    elif is_poa:
+        effective_price_per_m2 = None
         reasons.append("Price on Request - evaluated on features only")
-        # Don't penalize, don't reward - neutral on price
+        do_price_analysis = False
     else:
-        # Price vs market average
-        if listing.get("price_per_m2"):
-            price_per_m2 = listing["price_per_m2"]
+        effective_price_per_m2 = listing.get("price_per_m2")
+        do_price_analysis = True
 
-            # Get market stats for comparison
-            market_avg = await get_market_average(
-                listing.get("city"), listing.get("apartment_type"), poa_price_threshold
-            )
+    if do_price_analysis and effective_price_per_m2:
+        market_avg = await get_market_average(
+            listing.get("city"), listing.get("apartment_type"), poa_price_threshold
+        )
 
-            if market_avg:
-                price_ratio = price_per_m2 / market_avg
+        if market_avg:
+            price_ratio = effective_price_per_m2 / market_avg
 
-                if price_ratio < 0.8:
-                    score += 150
-                    highlights.append(f"Below market avg ({price_ratio:.0%} of avg)")
-                elif price_ratio < 0.95:
-                    score += 75
-                    highlights.append(f"Good price ({price_ratio:.0%} of avg)")
-                elif price_ratio > 1.2:
-                    score -= 100
-                    red_flags.append(f"Above market ({price_ratio:.0%} of avg)")
-                elif price_ratio > 1.1:
-                    score -= 50
-                    reasons.append(f"Slightly overpriced ({price_ratio:.0%} of avg)")
+            if price_ratio < 0.8:
+                score += 150
+                highlights.append(f"Below market avg ({price_ratio:.0%} of avg)")
+            elif price_ratio < 0.95:
+                score += 75
+                highlights.append(f"Good price ({price_ratio:.0%} of avg)")
+            elif price_ratio > 1.2:
+                score -= 100
+                red_flags.append(f"Above market ({price_ratio:.0%} of avg)")
+            elif price_ratio > 1.1:
+                score -= 50
+                reasons.append(f"Slightly overpriced ({price_ratio:.0%} of avg)")
 
         # Max price per m² check
-        if criteria.max_price_per_m2 and listing.get("price_per_m2"):
-            if listing["price_per_m2"] > criteria.max_price_per_m2:
+        if criteria.max_price_per_m2:
+            if effective_price_per_m2 > criteria.max_price_per_m2:
                 score -= 100
                 red_flags.append(
-                    f"Over max price/m² ({listing['price_per_m2']:,} > {criteria.max_price_per_m2:,})"
+                    f"Over max price/m² ({effective_price_per_m2:,} > {criteria.max_price_per_m2:,})"
                 )
             else:
                 score += 25
@@ -159,12 +169,12 @@ async def score_listing(
         area = listing["area_m2"]
 
         if criteria.min_area_m2 and area >= criteria.min_area_m2:
-            score += 25
+            score += 15
             highlights.append(f"Meets min area ({area} m²)")
 
         # Bonus for spacious
         if area > 70:
-            score += 25
+            score += 15
             highlights.append("Spacious")
 
     # === LOCATION ===
@@ -219,37 +229,42 @@ async def score_listing(
 
     if criteria.require_parking:
         if has_parking:
-            score += 100
+            score += 75
             highlights.append("Has parking ✓")
+            counted_feature_keys.add("parking")
         else:
             score += scoring.penalty_no_parking
             red_flags.append("Missing parking")
     elif has_parking:
-        score += 50
+        score += 25
         highlights.append("Parking available")
+        counted_feature_keys.add("parking")
 
     if criteria.require_balcony:
         if has_balcony:
-            score += 50
+            score += 35
             highlights.append("Has balcony/loggia ✓")
+            counted_feature_keys.add("balcony")
         else:
-            score -= 50
-            red_flags.append("Missing balcony")
+            score += scoring.penalty_no_balcony
+            red_flags.append(f"Missing balcony (required) ({scoring.penalty_no_balcony})")
     elif has_balcony:
-        score += 20
+        score += 10
         highlights.append("Has outdoor space")
+        counted_feature_keys.add("balcony")
 
     if criteria.require_elevator and not has_elevator:
-        score += -50
-        red_flags.append("Missing elevator (required)")
+        score += scoring.penalty_no_elevator
+        red_flags.append(f"Missing elevator (required) ({scoring.penalty_no_elevator})")
 
     if has_elevator:
-        score += 20
+        score += 15
         highlights.append("Elevator available")
 
     if has_cellar:
         score += 10
         highlights.append("Has cellar/storage")
+        counted_feature_keys.add("cellar")
 
     if features_dict.get("new_building"):
         score += scoring.bonus_new_building
@@ -274,27 +289,27 @@ async def score_listing(
     image_count = listing.get("image_count", 0)
 
     if image_count >= 15:
-        score += 25
+        score += 10
         highlights.append(f"Many photos ({image_count})")
     elif image_count >= 8:
-        score += 10
+        score += 5
     elif image_count < criteria.min_photos:
         score -= 30
         red_flags.append(f"Too few photos ({image_count})")
 
     if listing.get("has_floor_plan"):
-        score += 30
+        score += 15
         highlights.append("Floor plan available")
     elif criteria.require_floor_plan:
         score -= 50
         red_flags.append("Missing floor plan")
 
     if listing.get("has_video"):
-        score += 15
+        score += 10
         highlights.append("Video tour")
 
     if listing.get("has_3d_tour"):
-        score += 20
+        score += 15
         highlights.append("3D tour available")
 
     # === FLOOR ===
@@ -330,8 +345,22 @@ async def score_listing(
                 score += penalty  # penalty is negative
                 red_flags.append(f"'{word}' ({penalty})")
 
-        # Positive keywords - things that add value
+        # Positive keywords - things that add value.
+        # De-dup against feature flags so we don't double-count a signal
+        # that was already scored from features_dict (e.g. parking/balcony).
         good_keywords = dict(GOOD_KEYWORDS)
+
+        # Map description keywords to feature-key categories they overlap with.
+        # If the feature was already counted above, skip the description bonus.
+        keyword_feature_overlap = {
+            "garáž": "parking",
+            "parkovací stání": "parking",
+            "balkon": "balcony",
+            "lodžie": "balcony",
+            "terasa": "balcony",
+            "sklep": "cellar",
+            "komora": "cellar",
+        }
 
         # Merge user-defined bonus keywords from config (lowercased for matching)
         if scoring.bonus_description_keywords:
@@ -339,11 +368,23 @@ async def score_listing(
                 {k.lower(): v for k, v in scoring.bonus_description_keywords.items()}
             )
 
-        found_good = set()  # Avoid duplicates
+        # Cap total positive description contribution so a developer's
+        # marketing-stuffed text can't blow past every feature signal.
+        DESCRIPTION_BONUS_CAP = 75
+        desc_bonus_total = 0
+        found_good: set[str] = set()
         for word, bonus in good_keywords.items():
             if word in desc_lower and word not in found_good:
-                score += bonus
-                highlights.append(f"'{word}' (+{bonus})")
+                overlap = keyword_feature_overlap.get(word)
+                if overlap and overlap in counted_feature_keys:
+                    continue  # already counted via features, skip
+                allowed = max(0, DESCRIPTION_BONUS_CAP - desc_bonus_total)
+                if allowed <= 0:
+                    break
+                applied = min(bonus, allowed)
+                score += applied
+                desc_bonus_total += applied
+                highlights.append(f"'{word}' (+{applied})")
                 found_good.add(word)
 
         # Energy rating detection
@@ -376,15 +417,26 @@ async def score_listing(
 
     # === FINAL ADJUSTMENTS ===
 
-    # Clamp score to valid range
+    # Soft cap: above the "great" threshold, apply diminishing returns so
+    # only truly exceptional listings approach 1000. Without this, any
+    # well-described novostavba with parking maxes out and we lose
+    # differentiation at the top.
+    SOFT_CAP_FLOOR = 700
+    SOFT_CAP_CEIL = 1000
+    if score > SOFT_CAP_FLOOR:
+        excess = score - SOFT_CAP_FLOOR
+        room = SOFT_CAP_CEIL - SOFT_CAP_FLOOR  # 300
+        # Asymptotic compression — score approaches but never reaches 1000.
+        score = SOFT_CAP_FLOOR + int(room * (1 - 1 / (1 + excess / room)))
+
     if score >= 900:
-        # Potential gem - but let's not auto-assign 9999
         reasons.append("HIGH SCORE - potential gem! 💎")
 
+    # Clamp score to valid range
     if score < 0:
         score = 0
-    elif score > 1000:
-        score = 1000
+    elif score > SOFT_CAP_CEIL:
+        score = SOFT_CAP_CEIL
 
     # Determine category
     if len(red_flags) >= 3:

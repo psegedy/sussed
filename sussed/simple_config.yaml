@@ -25,11 +25,10 @@ output:
   include_analysis: true
   format: table
 
-agent:
+runner:
   max_listings_to_process: 20
   fetch_descriptions: true
   skip_already_scored: false
-  treat_1kc_as_poa: true
   use_llm: true
   llm_provider: anthropic
   llm_analyze_top_n: 3

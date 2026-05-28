@@ -42,11 +42,6 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
-    # Notifications (Phase 3)
-    discord_webhook_url: str | None = Field(default=None, description="Discord webhook URL")
-    telegram_bot_token: str | None = Field(default=None, description="Telegram bot token")
-    telegram_chat_id: str | None = Field(default=None, description="Telegram chat ID")
-
 
 @lru_cache
 def get_settings() -> Settings:

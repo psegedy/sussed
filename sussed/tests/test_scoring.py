@@ -97,8 +97,8 @@ async def test_required_parking_matters_more_than_top_preferred_district(
         poa_price_threshold=1,
     )
 
-    assert score_a["score"] == 600
-    assert score_b["score"] == 325
+    assert score_a["score"] == 475
+    assert score_b["score"] == 225
     assert score_a["score"] > score_b["score"]
 
 
@@ -119,7 +119,7 @@ async def test_preferred_district_bonus_uses_half_strength_ladder(
         for district in PREFERRED_DISTRICTS
     ]
 
-    assert [result["score"] for result in results] == [525, 520, 515, 510, 505]
+    assert [result["score"] for result in results] == [425, 420, 415, 410, 405]
 
 
 def _sort_for_hunt(

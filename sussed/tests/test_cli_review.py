@@ -141,6 +141,7 @@ def test_review_picks_json_outputs_ranked_results(
             "include_unreviewed": True,
             "district": "Pole",
             "min_score": 700,
+            "max_age_days": None,
             "limit": 5,
         }
     ]
@@ -161,6 +162,7 @@ def test_review_picks_json_outputs_ranked_results(
             "ai_summary": "Absolute heater.",
             "parking_price": 350000,
             "parking_included": False,
+            "usable_area_m2": None,
             "updated_at_source": None,
             "first_seen_at": "2025-01-02T03:04:05",
             "url": "https://example.com/777",

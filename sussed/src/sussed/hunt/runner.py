@@ -107,7 +107,7 @@ class AutonomousRunner:
         self._llm_analyzer = None
 
         # Initialize LLM analyzer if enabled
-        if config.agent.use_llm:
+        if config.runner.use_llm:
             self._init_llm_analyzer()
 
     def _init_llm_analyzer(self) -> None:
@@ -116,13 +116,13 @@ class AutonomousRunner:
             from sussed.hunt.llm_analyzer import get_llm_analyzer
 
             self._llm_analyzer = get_llm_analyzer(
-                model_provider=self.config.agent.llm_provider,
-                model_id=self.config.agent.llm_model,
+                model_provider=self.config.runner.llm_provider,
+                model_id=self.config.runner.llm_model,
             )
 
             if self._llm_analyzer.is_available:
                 console.print(
-                    f"[green]✓ LLM analyzer ready ({self.config.agent.llm_provider})[/green]"
+                    f"[green]✓ LLM analyzer ready ({self.config.runner.llm_provider})[/green]"
                 )
             else:
                 console.print(
@@ -157,7 +157,7 @@ class AutonomousRunner:
 
         # Step 0: Auto-scrape if enabled
         scrape_stats = None
-        if self.config.agent.auto_scrape:
+        if self.config.runner.auto_scrape:
             scrape_stats = await self._auto_scrape()
 
         # Step 1: Get matching listings from DB
@@ -198,11 +198,11 @@ class AutonomousRunner:
                 progress.update(task, advance=1)
 
         # Step 3: Second pass - fetch descriptions for top candidates
-        if self.config.agent.fetch_descriptions and processed:
+        if self.config.runner.fetch_descriptions and processed:
             # Sort by score and quality tiebreakers, get top N for description fetching
             processed.sort(key=lambda item: sort_key(item, self.config), reverse=True)
 
-            fetch_count = min(self.config.agent.enrich_top_n, len(processed))
+            fetch_count = min(self.config.runner.enrich_top_n, len(processed))
             top_candidates = processed[:fetch_count]
 
             console.print(
@@ -277,7 +277,7 @@ class AutonomousRunner:
         # Step 4: Third pass - LLM analysis for top candidates (THE REAL AI!)
         if self._llm_analyzer and self._llm_analyzer.is_available and processed:
             llm_count = min(
-                self.config.agent.llm_analyze_top_n,
+                self.config.runner.llm_analyze_top_n,
                 len(processed),
             )
 
@@ -362,7 +362,7 @@ class AutonomousRunner:
         # Step 6: Final validation loop - fetch descriptions for results that
         # bubbled up after sold listings were removed. Keeps going until we have
         # a clean set with no unchecked listings (or we run out of candidates).
-        if self.config.agent.fetch_descriptions and results:
+        if self.config.runner.fetch_descriptions and results:
             max_validation_rounds = 5  # Safety limit to avoid infinite loops
             validation_round = 0
             total_gone = 0
@@ -475,7 +475,7 @@ class AutonomousRunner:
         city = criteria.city.lower() if criteria.city else "brno"
         listing_type = criteria.listing_type or "sale"
         property_type = criteria.property_type or "apartment"
-        max_pages = self.config.agent.scrape_max_pages
+        max_pages = self.config.runner.scrape_max_pages
         max_age = criteria.max_listing_age  # day, week, or month
 
         try:
@@ -508,13 +508,13 @@ class AutonomousRunner:
         from sussed.db.models import Listing, ListingStatus
 
         criteria = self.config.criteria
-        agent = self.config.agent
+        runner = self.config.runner
 
         logger.debug(
             f"Query criteria: city={criteria.city}, types={criteria.apartment_types}, min_photos={criteria.min_photos}"
         )
         logger.debug(
-            f"Agent config: skip_scored={agent.skip_already_scored}, max_process={agent.max_listings_to_process}"
+            f"Runner config: skip_scored={runner.skip_already_scored}, max_process={runner.max_listings_to_process}"
         )
 
         async with get_session() as session:
@@ -595,7 +595,7 @@ class AutonomousRunner:
                 logger.debug(f"Age filter: listings from last {days} days (since {cutoff.date()})")
 
             # Skip already scored?
-            if agent.skip_already_scored:
+            if runner.skip_already_scored:
                 conditions.append(Listing.ai_analysis.is_(None))
 
             logger.debug(f"Built {len(conditions)} query conditions")
@@ -604,7 +604,7 @@ class AutonomousRunner:
                 select(Listing)
                 .where(and_(*conditions))
                 .options(selectinload(Listing.price_history))
-                .limit(agent.max_listings_to_process)
+                .limit(runner.max_listings_to_process)
                 .order_by(Listing.first_seen_at.desc())  # Newest first
             )
 
@@ -704,7 +704,7 @@ class AutonomousRunner:
         if (
             fetch_description
             and needs_desc
-            and self.config.agent.fetch_descriptions
+            and self.config.runner.fetch_descriptions
         ):
             description, source_date = await self._fetch_description(
                 listing_id,
@@ -721,7 +721,7 @@ class AutonomousRunner:
         # Skip if no description and agent says skip
         if (
             not listing.get("description")
-            and self.config.agent.poa_evaluation_mode == "skip"
+            and self.config.runner.poa_evaluation_mode == "skip"
             and is_poa
         ):
             self.stats["skipped"] += 1

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 DEFAULT_STALE_AFTER_DAYS = 30
+POA_PRICE_THRESHOLD = 10  # Anything ≤ this CZK is treated as "Price on Request"
 
 
 def _utcnow() -> datetime:
@@ -67,6 +68,39 @@ def _stable_input_hash(data: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _derive_price_drop_signals(
+    current_price: int, price_history: list[dict[str, Any]]
+) -> tuple[int | None, int | None, bool]:
+    """Compute initial/original/dropped-to-POA signals from price history.
+
+    Returns:
+        (initial_price, original_price, price_dropped_to_poa).
+        - initial_price: first recorded price (chronologically).
+        - original_price: last non-POA price before current — set only when
+          the current price is POA.
+        - price_dropped_to_poa: True iff current is POA and a prior non-POA
+          price existed (a strong "seller hiding new price" signal).
+    """
+    if not price_history:
+        return None, None, False
+
+    # price_history from `get_price_history_payload` is sorted DESC by recorded_at.
+    # We need the chronologically-first entry for `initial_price`.
+    ordered = sorted(price_history, key=lambda h: h.get("recorded_at") or "")
+    initial = ordered[0].get("price_czk") if ordered else None
+
+    current_is_poa = current_price <= POA_PRICE_THRESHOLD
+    original = None
+    if current_is_poa:
+        for entry in reversed(ordered):
+            price = entry.get("price_czk")
+            if price is not None and price > POA_PRICE_THRESHOLD:
+                original = price
+                break
+
+    return initial, original, current_is_poa and original is not None
+
+
 def prepare_review_payload_from_listing(
     listing: Listing,
     image_paths: list[str],
@@ -74,6 +108,9 @@ def prepare_review_payload_from_listing(
     price_history: list[dict[str, Any]],
 ) -> PreparedListingReview:
     """Build the JSON payload consumed by the AI review skill."""
+    initial_price, original_price, dropped_to_poa = _derive_price_drop_signals(
+        listing.price_czk, price_history
+    )
     base_data: dict[str, Any] = {
         "listing_id": listing.id,
         "external_id": listing.external_id,
@@ -82,6 +119,9 @@ def prepare_review_payload_from_listing(
         "url": listing.url,
         "price_czk": listing.price_czk,
         "price_per_m2": listing.price_per_m2,
+        "initial_price": initial_price,
+        "original_price": original_price,
+        "price_dropped_to_poa": dropped_to_poa,
         "listing_type": listing.listing_type.value if listing.listing_type else None,
         "city": listing.city,
         "district": listing.district,
@@ -175,9 +215,12 @@ async def get_reviewed_picks(
     include_unreviewed: bool = False,
     district: str | None = None,
     min_score: int | None = None,
+    max_age_days: int | None = None,
     limit: int = 20,
 ) -> list[Listing]:
     """Get active listings, optionally filtered by AI review status."""
+    from datetime import timedelta
+
     conditions = [Listing.status == ListingStatus.ACTIVE]
 
     if not include_unreviewed:
@@ -188,6 +231,10 @@ async def get_reviewed_picks(
 
     if min_score is not None:
         conditions.append(Listing.ai_score >= min_score)
+
+    if max_age_days is not None:
+        cutoff = _utcnow() - timedelta(days=max_age_days)
+        conditions.append(Listing.first_seen_at >= cutoff)
 
     stmt = select(Listing).where(*conditions)
     stmt = stmt.order_by(

@@ -26,7 +26,6 @@ criteria:
   avoid_top_floor: false
   require_parking: true
   require_balcony: false
-  require_cellar: false
   require_elevator: true
   reject_panel_building: true
   reject_ground_floor: false
@@ -34,12 +33,12 @@ criteria:
   require_floor_plan: false
   # Auto-reject listings containing these keywords in description (case-insensitive)
   # exclude_description_keywords: "kalevala"
-  max_listing_age: 14
+  max_listing_age: 31
 scoring:
-  bonus_new_building: 300
-  bonus_reconstruction: 100
-  bonus_very_good_condition: 88
-  penalty_no_parking: -200
+  bonus_new_building: 150
+  bonus_reconstruction: 80
+  bonus_very_good_condition: 60
+  penalty_no_parking: -150
   penalty_panel: -100
   # Extra penalty keywords for descriptions (merged with built-in sketchy list)
   # penalize_description_keywords:
@@ -53,14 +52,12 @@ output:
   mode: best
   limit: 20
   include_analysis: true
-  include_description: false
   format: table
-agent:
+runner:
   max_listings_to_process: 1000
   fetch_descriptions: true
   enrich_top_n: 500
   skip_already_scored: false
-  treat_1kc_as_poa: true
   poa_evaluation_mode: description_only
   auto_scrape: false
   scrape_max_pages: 20
