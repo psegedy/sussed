@@ -164,7 +164,7 @@ def test_review_payload_roundtrip_for_save_contract() -> None:
         vibe=ReviewVibe.VALID,
         confidence=0.8,
         recommendation="CONSIDER",
-        score_reason="Good but not a unicorn.",
+        score_reason="Good but not a unicorn. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/000]",
         summary="Solid option.",
         reviewer_name="sussed-ai-review",
         input_hash="inputhash",
@@ -194,7 +194,7 @@ async def test_save_listing_review_inserts_review_and_updates_listing_denormaliz
         vibe=ReviewVibe.PEAK,
         confidence=0.88,
         recommendation="CONSIDER",
-        score_reason="Below-market 2+kk with a separate parking cost.",
+        score_reason="Below-market 2+kk with a separate parking cost. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/001]",
         summary="Strong listing with a parking-price caveat.",
         red_flags=["Parking not included"],
         yellow_flags=["Verify HOA fees"],
@@ -229,7 +229,7 @@ async def test_save_listing_review_inserts_review_and_updates_listing_denormaliz
     assert review.vibe == VibeCheck.PEAK
     assert review.confidence == Decimal("0.88")
     assert review.recommendation == "CONSIDER"
-    assert review.score_reason == "Below-market 2+kk with a separate parking cost."
+    assert review.score_reason == "Below-market 2+kk with a separate parking cost. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/001]"
     assert review.summary == "Strong listing with a parking-price caveat."
     assert review.red_flags == ["Parking not included"]
     assert review.yellow_flags == ["Verify HOA fees"]
@@ -256,7 +256,7 @@ async def test_save_listing_review_inserts_review_and_updates_listing_denormaliz
         "vibe": "peak",
         "confidence": 0.88,
         "recommendation": "CONSIDER",
-        "score_reason": "Below-market 2+kk with a separate parking cost.",
+        "score_reason": "Below-market 2+kk with a separate parking cost. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/001]",
         "summary": "Strong listing with a parking-price caveat.",
         "red_flags": ["Parking not included"],
         "yellow_flags": ["Verify HOA fees"],

@@ -72,10 +72,10 @@ Example: `"score_reason": "Own fenced 920 m² plot, electricity connected, well 
 
 ## Validation
 
-Use the existing helper before saving:
+Use the built-in CLI validator before saving:
 
 ```bash
-python3 ../.copilot/sussed-plugin/skills/sussed-ai-review/scripts/make_review.py validate <review-path>
+uv run sussed review validate <review-path>
 ```
 
 The validator checks required fields, score range, confidence range, valid vibe, integer/null `hidden_costs`, and the URL rule for `score_reason`.

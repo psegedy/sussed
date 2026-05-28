@@ -33,7 +33,7 @@ Heavy reference content lives in sibling files. Load them on demand:
 
 ## Workflow
 
-Run from the Python project directory (`sussed/` inside the repo/worktree).
+**First step in any new shell or sub-agent:** `cd` into the Python project directory (`sussed/` inside the repo or worktree) before running anything below. Every `uv run sussed ...` command below assumes this CWD.
 
 1. **Refresh + score with hunt (always start here).** `sussed hunt -c search_config.yaml --scrape` scrapes fresh listings, applies the user's search config, and writes a `quick_score` into `ai_analysis` for every match. Without this, `review candidates` has nothing fresh to surface.
    - After editing scoring weights, add `--rescore` to re-score the existing catalog under the new rules.
@@ -60,7 +60,7 @@ Run from the Python project directory (`sussed/` inside the repo/worktree).
 
 8. **Write the review JSON** matching [references/review-schema.md](references/review-schema.md). Copy `input_hash` exactly. `score_reason` MUST end with the listing URL in square brackets.
 
-9. **Validate** before saving: `python3 ../.copilot/sussed-plugin/skills/sussed-ai-review/scripts/make_review.py validate <review-path>`
+9. **Validate** before saving: `uv run sussed review validate <review-path>`
 
 10. **Save through the CLI:**
     ```bash

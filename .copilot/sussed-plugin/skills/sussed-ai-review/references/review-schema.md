@@ -62,7 +62,13 @@ Example: `"score_reason": "Pisárky novostavba with Špilberk view, parking +400
 
 ## Validation
 
-Use `scripts/make_review.py validate <path>` before saving to catch missing required fields, URL absence in `score_reason`, wrong score range, or string values in `hidden_costs`.
+Use the built-in CLI validator before saving:
+
+```bash
+uv run sussed review validate <review-path>
+```
+
+It catches missing required fields, URL absence in `score_reason`, wrong score range, or string values in `hidden_costs`. The legacy `scripts/make_review.py validate <path>` helper is still available if you need to validate without the `sussed` venv.
 
 ## Operational notes
 

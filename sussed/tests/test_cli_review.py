@@ -31,7 +31,7 @@ def test_review_json_file_contract(tmp_path: Path) -> None:
   "vibe": "valid",
   "confidence": 0.8,
   "recommendation": "CONSIDER",
-  "score_reason": "Good enough to inspect.",
+  "score_reason": "Good enough to inspect. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/123456789]",
   "summary": "Solid listing.",
   "reviewer_name": "sussed-ai-review",
   "input_hash": "hash"
@@ -44,6 +44,98 @@ def test_review_json_file_contract(tmp_path: Path) -> None:
 
     review = ReviewResultInput.model_validate_json(path.read_text(encoding="utf-8"))
     assert review.score == 700
+
+
+def test_review_result_input_rejects_score_reason_without_url() -> None:
+    from pydantic import ValidationError
+
+    from sussed.review.models import ReviewResultInput
+
+    with pytest.raises(ValidationError) as excinfo:
+        ReviewResultInput.model_validate(
+            {
+                "score": 500,
+                "vibe": "mid",
+                "confidence": 0.5,
+                "recommendation": "SKIP",
+                "score_reason": "No URL in here, just prose.",
+                "summary": "Whatever.",
+                "reviewer_name": "test",
+                "input_hash": "h",
+            }
+        )
+
+    assert "score_reason must include the listing URL" in str(excinfo.value)
+
+
+def test_review_validate_command_accepts_valid_payload(tmp_path: Path) -> None:
+    payload = tmp_path / "ok.json"
+    payload.write_text(
+        """
+{
+  "score": 700,
+  "vibe": "valid",
+  "confidence": 0.8,
+  "recommendation": "CONSIDER",
+  "score_reason": "Worth a visit. [https://www.sreality.cz/detail/prodej/byt/2-kk/brno/123]",
+  "summary": "Solid listing.",
+  "reviewer_name": "sussed-ai-review",
+  "input_hash": "hash"
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(app, ["review", "validate", str(payload)])
+
+    assert result.exit_code == 0, result.output
+    assert "valid" in result.output
+
+
+def test_review_validate_command_rejects_bad_schema(tmp_path: Path) -> None:
+    payload = tmp_path / "bad.json"
+    payload.write_text(
+        """
+{
+  "score": 1500,
+  "vibe": "fire",
+  "confidence": 1.5,
+  "recommendation": "",
+  "score_reason": "no link",
+  "summary": "",
+  "reviewer_name": "test",
+  "input_hash": "h",
+  "hidden_costs": {"x": "not an int"}
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(app, ["review", "validate", str(payload)])
+
+    assert result.exit_code == 1
+    assert "Schema validation failed" in result.output
+    assert "score" in result.output
+    assert "vibe" in result.output
+
+
+def test_review_validate_command_reports_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.json"
+
+    result = CliRunner().invoke(app, ["review", "validate", str(missing)])
+
+    assert result.exit_code == 1
+    assert "File not found" in result.output
+
+
+def test_review_validate_command_reports_invalid_json(tmp_path: Path) -> None:
+    payload = tmp_path / "garbage.json"
+    payload.write_text("not json at all", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["review", "validate", str(payload)])
+
+    assert result.exit_code == 1
+    assert "Invalid JSON" in result.output
 
 
 def test_review_help_lists_review_commands() -> None:

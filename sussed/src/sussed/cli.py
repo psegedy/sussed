@@ -1327,16 +1327,75 @@ def review_prepare_batch(
     console.print(f"\n[green]✅ Prepared {len(prepared)} listings for review[/green]")
 
 
+@review_app.command("validate")
+def review_validate(
+    input_file: str = typer.Argument(..., help="Path to a review JSON file"),
+) -> None:
+    """Validate a review JSON payload without saving it 🧪
+
+    Returns exit code 0 when the file matches the ``ReviewResultInput`` schema.
+    Exits with code 1 and prints field-level errors when validation fails.
+
+    Examples:
+        # Validate one file
+        uv run sussed review validate .sussed/reviews-garden/abcdef12-review.json
+
+        # Validate every file in a directory
+        for f in .sussed/reviews-garden/*-review.json; do
+            uv run sussed review validate "$f" || break
+        done
+    """
+    from pathlib import Path
+
+    from pydantic import ValidationError
+
+    from sussed.review.models import ReviewResultInput
+
+    path = Path(input_file)
+    if not path.exists():
+        console.print(f"[red]❌ File not found:[/red] {input_file}")
+        raise typer.Exit(code=1)
+
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[red]❌ Cannot read file:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]❌ Invalid JSON in {input_file}:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        ReviewResultInput.model_validate_json(raw_text)
+    except ValidationError as exc:
+        console.print(f"[red]❌ Schema validation failed for {input_file}:[/red]")
+        for err in exc.errors():
+            loc = ".".join(str(part) for part in err["loc"]) or "<root>"
+            console.print(f"  • [yellow]{loc}[/yellow]: {err['msg']}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]✓ valid:[/green] {input_file}")
+
+
 @review_app.command("save")
 def review_save(
     listing_id: str = typer.Argument(...),
     input_file: str = typer.Option(..., "--input", "-i"),
 ) -> None:
-    """Save a structured AI review JSON payload."""
+    """Save a structured AI review JSON payload.
+
+    The JSON is validated against the review schema before any database
+    write. On schema errors, the listing is left untouched and field-level
+    errors are printed so callers can fix the file and retry.
+    """
 
     async def _run() -> dict[str, object]:
         from pathlib import Path
 
+        from pydantic import ValidationError
         from sqlalchemy import text
         from sqlmodel import select
 
@@ -1345,9 +1404,19 @@ def review_save(
         from sussed.review.models import ReviewResultInput
         from sussed.review.service import save_listing_review
 
-        review_input = ReviewResultInput.model_validate_json(
-            Path(input_file).read_text(encoding="utf-8")
-        )
+        path = Path(input_file)
+        if not path.exists():
+            raise FileNotFoundError(f"Review file not found: {input_file}")
+
+        raw_text = path.read_text(encoding="utf-8")
+        try:
+            review_input = ReviewResultInput.model_validate_json(raw_text)
+        except ValidationError as exc:
+            lines = [f"Review JSON failed validation ({input_file}):"]
+            for err in exc.errors():
+                loc = ".".join(str(part) for part in err["loc"]) or "<root>"
+                lines.append(f"  - {loc}: {err['msg']}")
+            raise ValueError("\n".join(lines)) from exc
 
         async with get_session() as session:
             stmt = (
@@ -1372,7 +1441,13 @@ def review_save(
                 "reviewed_at": review.reviewed_at.isoformat(),
             }
 
-    console.print_json(json.dumps(asyncio.run(_run()), ensure_ascii=False, default=str))
+    try:
+        result = asyncio.run(_run())
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]❌ {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print_json(json.dumps(result, ensure_ascii=False, default=str))
 
 
 @review_app.command("status")

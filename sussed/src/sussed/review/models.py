@@ -1,11 +1,14 @@
 """Pydantic models for AI listing review payloads."""
 
+import re
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+URL_PATTERN = re.compile(r"https?://\S+")
 
 
 class ReviewVibe(str, Enum):
@@ -109,3 +112,20 @@ class ReviewResultInput(BaseModel):
         if 0 <= value <= 1000:
             return value
         raise ValueError("score must be -1, 0-1000, or 9999")
+
+    @field_validator("score_reason")
+    @classmethod
+    def validate_score_reason_has_url(cls, value: str) -> str:
+        """Require the listing URL inside ``score_reason``.
+
+        Every review skill mandates the listing URL inside ``score_reason``
+        (typically at the end in square brackets) so downstream readers can
+        always jump back to the source. Reject payloads that lack it instead
+        of silently storing rootless reviews.
+        """
+        if not URL_PATTERN.search(value):
+            raise ValueError(
+                "score_reason must include the listing URL (e.g. end with "
+                "'[https://www.sreality.cz/detail/...]')"
+            )
+        return value

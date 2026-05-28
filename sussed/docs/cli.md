@@ -88,6 +88,9 @@ uv run sussed review candidates --limit 5
 # Prepare one listing (reads cached photos from .sussed/image-cache/)
 uv run sussed review prepare abcdef12 --output .sussed/image-cache/abcdef12-prepared.json
 
+# Validate the AI-produced review JSON before saving (no DB write)
+uv run sussed review validate .sussed/image-cache/abcdef12-review.json
+
 # Save a structured AI review produced by an AI review skill
 uv run sussed review save abcdef12 --input .sussed/image-cache/abcdef12-review.json
 ```
