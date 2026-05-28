@@ -33,7 +33,7 @@ Heavy reference content lives in sibling files. Load them on demand:
 
 **First step in any new shell or sub-agent:** `cd` into the Python project directory (`sussed/` inside the repo or worktree) before running anything below. Every `uv run sussed ...` command below assumes this CWD.
 
-1. **Refresh + score with hunt (always start here).** `sussed hunt -c search_config.yaml --scrape` scrapes fresh listings, applies the user's search config, and writes a `quick_score` into `ai_analysis` for every match.
+1. **Refresh + score with hunt (always start here).** `sussed hunt -c cottage_config.yaml --scrape` scrapes fresh listings, applies the user's search config, and writes a `quick_score` into `ai_analysis` for every match.
    - After editing scoring weights, add `--rescore` to re-score the existing catalog under the new rules.
 
 2. **Check the queue.** `uv run sussed review status`
@@ -52,7 +52,12 @@ Heavy reference content lives in sibling files. Load them on demand:
 
 5. **Inspect the prepared JSON.** Read `description`, `detail_items`, `features`, `price_history`, `image_urls`, `image_paths`, `input_hash`, and the top-level price-drop signals: `initial_price`, `original_price`, `price_dropped_to_poa`. If `price_dropped_to_poa` is true, flag the POA switch in `yellow_flags`/`red_flags` and `score_reason`.
 
-6. **Inspect every cached image** in `image_paths`. Do not infer condition from `image_count`, filenames, or URLs alone. If no image paths are available, add a `yellow_flags` entry such as `"Photo inspection unavailable: no local image paths in prepared payload."`
+6. **Inspect every cached image** in `image_paths`. Photos catch the killers descriptions hide. Classify each image first:
+   - **Aerial / cadastral map** — flag motorway/railway/airport adjacency, high-voltage pylons (VN/VVN), industrial neighbours, flood-zone river bends within ~200 m.
+   - **Real on-site photo** — check roof, façade, dampness, windows, access road, parking, plot, fence, neighbours, slope.
+   - **CGI / AI render** — trust only the corroborating real photos.
+
+   Do not infer condition from `image_count`, filenames, or URLs alone. If `image_paths` is empty, add a `yellow_flags` entry: `"Photo inspection unavailable: no local image paths in prepared payload."` If every image is a map with no on-site view, add: `"Photos are maps/cadastral only — no on-site evidence."`
 
 7. **Inspect plot/utility signals.** Extract land size, land ownership, electricity, water source, sewage, road access, heating, legal status/kolaudace, and obvious condition issues. Cottages report plot size and indoor m² separately; do **not** run apartment area-recalc logic. Set `usable_area_m2` only to indoor living/usable area when explicit.
 
@@ -82,7 +87,13 @@ Heavy reference content lives in sibling files. Load them on demand:
 
 - Use `prepare-batch` to fetch many candidates in one call, then review in parallel.
 - Dispatch sub-agents in **batches of 5–7 listings**; keep to **3–4 parallel agents** to avoid stalling and rate-limit failures.
-- For metadata-only listings, score from title/price/area/location with explicit uncertainty flags. Use `../sussed-ai-review/scripts/make_review.py` and `../sussed-ai-review/scripts/batch_save.sh` to avoid hand-writing broken JSON.
+- Sub-agents must include the rubric inline or load it from `references/ideal-profile.md` themselves; they cannot rely on parent context.
+- Helper scripts at `../sussed-ai-review/scripts/`:
+  - `summarize_prepared.py <prepared.json>` — compact human digest, cottage-aware when `property_category == "cottage"`.
+  - `make_review.py skeleton <prepared.json> --out <review.json>` — emit a valid review stub pre-filled with `input_hash`, URL-bearing `score_reason`, and `reviewer_name`. The reviewer fills in score / vibe / flags / summary.
+  - `make_review.py validate <review.json>` — local schema check (same rules as `uv run sussed review validate`).
+  - `batch_save.sh <dir>` — `sussed review save` every `*-review.json` in a directory.
+- For metadata-only listings, score from title/price/area/location with explicit uncertainty flags. Keep confidence ≤ 0.5.
 
 ## Viewing results
 

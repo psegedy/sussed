@@ -233,6 +233,62 @@ def _load_review(path: Path) -> dict[str, Any]:
     return data
 
 
+def _load_prepared(path: Path) -> dict[str, Any]:
+    """Load a prepared review payload from disk."""
+    with path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError("prepared payload must be a JSON object")
+    required = ("url", "input_hash")
+    for field in required:
+        if not data.get(field):
+            raise ValueError(f"prepared payload missing '{field}'")
+    return data
+
+
+def _skeleton_command(prepared_path: str, out_path: str | None, reviewer: str) -> int:
+    """Emit a valid review-JSON stub seeded from a prepared payload.
+
+    The skeleton fills the mechanical fields (URL, input_hash, usable_area_m2,
+    reviewer_name) so the reviewer only needs to set score, vibe, confidence,
+    recommendation, summary, score_reason content, and flags/highlights.
+    """
+    try:
+        prepared = _load_prepared(Path(prepared_path).expanduser())
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"❌ cannot read prepared payload: {exc}", file=sys.stderr)
+        return 1
+
+    url = prepared["url"]
+    area = prepared.get("area_m2")
+    usable_area = float(area) if isinstance(area, int | float) and area else None
+
+    review = build_review(
+        score=0,
+        vibe="mid",
+        confidence=0.5,
+        recommendation="TODO",
+        score_reason=f"TODO: justify the score with concrete evidence. [{url}]",
+        summary="TODO: one- or two-sentence human summary.",
+        input_hash=prepared["input_hash"],
+        url=url,
+        red_flags=[],
+        yellow_flags=[],
+        highlights=[],
+        hidden_costs={},
+        usable_area_m2=usable_area,
+        photo_observations=[],
+        reviewer_name=reviewer,
+    )
+
+    target = Path(out_path).expanduser() if out_path else Path(prepared_path).with_name(
+        Path(prepared_path).stem.replace("-prepared", "-review") + ".json"
+    )
+    dump_review(review, str(target))
+    print(f"✓ wrote skeleton: {target}")
+    return 0
+
+
 def _validate_command(path: str) -> int:
     """Validate a review JSON file and return a process exit code."""
     try:
@@ -261,6 +317,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     validate_parser = subparsers.add_parser("validate", help="Validate a review JSON file.")
     validate_parser.add_argument("path", help="Path to a review JSON file.")
 
+    skeleton_parser = subparsers.add_parser(
+        "skeleton",
+        help="Emit a valid review JSON stub seeded from a prepared payload.",
+    )
+    skeleton_parser.add_argument("prepared", help="Path to a *-prepared.json payload.")
+    skeleton_parser.add_argument("--out", help="Output review JSON path. Defaults to <prefix>-review.json next to the prepared file.")
+    skeleton_parser.add_argument(
+        "--reviewer-name",
+        default=DEFAULT_REVIEWER_NAME,
+        help=f"Override reviewer_name (default: {DEFAULT_REVIEWER_NAME}).",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -269,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.command == "validate":
         return _validate_command(args.path)
+    if args.command == "skeleton":
+        return _skeleton_command(args.prepared, args.out, args.reviewer_name)
     raise AssertionError(f"unhandled command: {args.command}")
 
 

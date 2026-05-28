@@ -34,9 +34,19 @@ Score high when the listing is legally clean, usable immediately, has connected 
 - No winter road access, no parking, or access only through someone else's land.
 - Leaky roof, serious damp/mold, rot, structural cracks, or asbestos (`eternit`).
 - Cooperative ownership, unclear ownership, `pronájem pozemku`, or missing cadastre/legal status.
-- `bez kolaudace`, `bez katastru`, “černá stavba” vibes, or evasive description.
+- `bez kolaudace`, `bez katastru`, "černá stavba" vibes, or evasive description.
 - No water source and no realistic plan to add one.
 - `pouze hotovost`, auction/execution, or hard-pressure sale language.
+
+### Transport, power-line, and industrial adjacency (photo-only signals)
+
+Cottages amplify environmental hazards because the buyer plans to sleep there. The description usually hides these; the aerial / cadastral images don't. Within ~200 m, any of these is a red flag and belongs in `red_flags`:
+
+- Motorway or main road (D1, D2, silnice I. třídy) — night-long noise and fumes.
+- Electrified railway tracks or visible overhead catenary masts — EM exposure and rolling-stock noise.
+- Airport runway or flight path (Brno-Tuřany covers the SE corridor) — overhead aircraft noise.
+- High-voltage power lines overhead (VN 22 kV+ or VVN 110 kV+, visible steel pylons).
+- Heavy industrial complex, quarry (`lom`), gravel pit (`pískovna`), or large livestock operation (`velkochov`) directly adjacent.
 
 ## Yellow flags
 
@@ -46,6 +56,9 @@ Score high when the listing is legally clean, usable immediately, has connected 
 - Sewage is only `jímka` with unknown condition or emptying costs.
 - Seasonal access, narrow forest road, or vague parking.
 - Wood-only heating if the buyer wants winter use.
+- Photos are only maps or cadastral views with no on-site shots.
+- Lead photo looks AI-generated or CGI; rely on the other photos.
+- Stale building / utility approvals older than ~3 years; verify they still hold.
 
 ## Highlights
 

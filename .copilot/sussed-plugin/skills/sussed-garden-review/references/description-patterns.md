@@ -76,6 +76,29 @@ For gardens, `parking_price` and `parking_included` are usually `null` unless a 
 - `bez možnosti stavby`
 - `bez možnosti elektřiny`
 - `právní vady`, `věcné břemeno`, `sporný přístup`
+- `ve vlastnictví státu`, `pozemek města` — state/municipal land
+
+## Transport, power, and noise adjacency
+
+Czech listings rarely admit these. Cross-check the aerial / cadastral images and any GPS coordinates against a map.
+
+- `u dálnice`, `D1`, `D2`, `silnice I. třídy` — motorway / main road.
+- `u trati`, `železniční trať`, `koridor` — railway, often electrified.
+- `letiště`, `Tuřany` — airport (Brno-Tuřany flight path covers the SE Brno-venkov band).
+- `vysoké napětí`, `vedení VN`, `VN linka`, `VVN` — high-voltage power lines overhead.
+- `průmyslová zóna`, `lom`, `pískovna`, `velkochov` — industrial / mining / livestock neighbour.
+
+The photo classification is more reliable than the text: motorway lanes, catenary masts, airport runways, and pylons are unmistakable from above even when the description stays silent.
+
+## Image-source quality
+
+Some listings provide only cadastral plans or AI-generated lead photos. Distinguish them before scoring:
+
+- Real on-site photo — handheld perspective, weather/season match, no render style.
+- Aerial / cadastral — orthophoto or katastrální mapa overlay; great for adjacency checks.
+- CGI / AI render — implausible lighting, mismatched seasons, suspiciously perfect chatka.
+
+When no real on-site photo exists, add the `"Photos are maps/cadastral only — no on-site evidence."` yellow flag.
 
 ## Phrase → review field mapping
 

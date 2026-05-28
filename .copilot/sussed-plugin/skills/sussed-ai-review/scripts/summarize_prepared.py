@@ -59,7 +59,7 @@ def _feature_value(features: dict[str, Any], key: str, fallback: Any = None) -> 
 
 
 def _format_features(features: dict[str, Any]) -> str:
-    """Format the fields reviewers most often need first."""
+    """Format the apartment fields reviewers most often need first."""
     parking = _feature_value(features, "parking")
     if parking is None:
         parking = bool(features.get("garage") or features.get("parking_lots"))
@@ -78,6 +78,32 @@ def _format_features(features: dict[str, Any]) -> str:
         ("cellar", features.get("cellar")),
     ]
     return " ".join(f"{key}={value}" for key, value in pairs)
+
+
+def _format_list(values: Any) -> str:
+    """Render a list-of-strings feature compactly."""
+    if isinstance(values, list) and values:
+        return ",".join(str(v) for v in values)
+    return "None"
+
+
+def _format_garden_features(features: dict[str, Any]) -> str:
+    """Format the garden/cottage land fields reviewers most often need first."""
+    pairs = [
+        ("ownership", features.get("ownership")),
+        ("water", _format_list(features.get("water_sources"))),
+        ("electricity", _format_list(features.get("electricity_sources"))),
+        ("sewage", _format_list(features.get("sewage_sources"))),
+        ("condition", features.get("building_condition") or features.get("condition")),
+    ]
+    return " ".join(f"{key}={value}" for key, value in pairs)
+
+
+def _features_for_category(category: Any, features: dict[str, Any]) -> str:
+    """Pick the property-appropriate feature renderer."""
+    if isinstance(category, str) and category.lower() in {"garden", "cottage"}:
+        return _format_garden_features(features)
+    return _format_features(features)
 
 
 def _preview_description(description: Any) -> str:
@@ -127,7 +153,7 @@ def summarize_payload(data: dict[str, Any], source_path: Path | None = None) -> 
                 f"original={_format_int(data.get('original_price'))} "
                 f"to_poa={data.get('price_dropped_to_poa')}"
             ),
-            f"Features: {_format_features(features)}",
+            f"Features: {_features_for_category(data.get('property_category'), features)}",
             f"Photos: {len(image_paths)} cached{advertised}",
             f"input_hash: {data.get('input_hash') or 'None'}",
             "--- Description ---",

@@ -28,14 +28,22 @@ Importable helpers:
 - `validate_review(review)` returns a list of validation errors.
 - `dump_review(review, output_path)` writes pretty JSON with UTF-8 text.
 
-CLI validation:
+CLI:
 
 ```bash
+# Validate a finished review
 python3 make_review.py validate reviews/2e6afbfb-review.json
+
+# Emit a schema-valid stub from a prepared payload; fill in score/vibe/flags later
+python3 make_review.py skeleton .sussed/image-cache/2e6afbfb-prepared.json
+python3 make_review.py skeleton .sussed/image-cache/2e6afbfb-prepared.json \
+    --out reviews/2e6afbfb-review.json --reviewer-name sussed-garden-review
 ```
 
 The validator checks score range, confidence range, valid vibe, integer/null
 `hidden_costs`, and the skill rule that `score_reason` includes the listing URL.
+The skeleton seeds `input_hash`, URL-bearing `score_reason`, `usable_area_m2`,
+and `reviewer_name` so the reviewer only fills in judgement fields.
 
 ## `batch_save.sh`
 

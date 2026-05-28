@@ -32,6 +32,7 @@ A strong garden listing has most of these:
 These can crush the score unless the listing gives unusually clear mitigation:
 
 - `pronájem pozemku`, annual lease only, or unclear right to use the land.
+- State-owned (`ve vlastnictví státu`) or municipality-owned plot — buyer never holds freehold; flag even when there's "no rent".
 - Cooperative-only ownership (`družstevní`) without clear share terms, transfer rules, or buyback path.
 - No water (`bez vody`) or no realistic water source.
 - No electricity and no viable hookup (`bez možnosti elektřiny`).
@@ -41,18 +42,32 @@ These can crush the score unless the listing gives unusually clear mitigation:
 - `exekuce`, `dražba`, forced sale, or `pouze hotovost` financing pressure.
 - Building restrictions that defeat the intended use, e.g. no shed, no utility hookup, no access.
 
+### Transport, power-line, and industrial adjacency (photo-only signals)
+
+These rarely appear in the description. Check the aerial / cadastral images first; if you see any of these within ~200 m of the plot, treat as a red flag and document in `red_flags`:
+
+- Motorway or main road (D1, D2, R/silnice I.tř.) — noise, fumes, light pollution.
+- Electrified railway tracks or visible overhead catenary masts — noise and EM exposure.
+- Airport runway or flight path (e.g. Brno-Tuřany) — overhead aircraft noise.
+- High-voltage power lines overhead (VN 22 kV+ or VVN 110 kV+, visible steel pylons).
+- Heavy industrial complex, quarry, gravel pit, or large-scale agricultural operation directly adjacent.
+
 ## Yellow flags
 
 These are not instant death, but they need transparency in `yellow_flags` and `score_reason`:
 
 - Shared water (`společná voda`, colony well) instead of own source.
-- Generator-only electricity or “possible connection” with no price/timeline.
+- Generator-only electricity or "possible connection" with no price/timeline.
+- Stale approvals or non-binding opinions older than ~3 years; verify they still hold.
 - Unfenced or unclear boundary.
 - No shed/chatka/structure.
 - Overgrown plot requiring major cleanup.
 - Cooperative ownership with decent but incomplete terms.
 - Car access nearby but not directly to the plot.
 - Tiny plot under 300 m² or monster plot over 1000 m² unless price/use case justifies it.
+- Bus/tram stop within ~50 m — convenient, but noisy and busy.
+- Photos are only maps or cadastral views with no on-site shots.
+- Lead photo looks AI-generated or CGI; rely on the other photos.
 
 ## Highlights
 
