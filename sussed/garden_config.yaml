@@ -17,9 +17,9 @@ criteria:
   city: brno-venkov
   property_type: garden
   listing_type: sale
-  max_price: 3500000
+  max_price: 5000000
   min_area_m2: 100.0 # For garden listings this is the advertised plot area.
-  max_area_m2: 1500.0
+  max_area_m2: 5000.0  # Brno-venkov gardens range 37–4890 m²; cap loose, let scoring rank smaller plots higher.
   min_photos: 1
   max_listing_age: 60
   exclude_description_keywords: "dražba, exekuce, pronájem pozemku"
