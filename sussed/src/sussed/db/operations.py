@@ -198,9 +198,12 @@ async def upsert_listing_from_sreality(
                 listing.price_per_m2 = new_price_per_m2
                 listing.last_price_change_at = now
 
+                pct_str = (
+                    f" / {change_percent:+.1f}%" if change_percent is not None else ""
+                )
                 logger.info(
                     f"Price change for {estate.hash_id}: {old_price:,} -> {new_price:,} CZK "
-                    f"({change_amount:+,} / {change_percent:+.1f}%)"
+                    f"({change_amount:+,}{pct_str})"
                 )
 
         listing.url = _build_listing_url(estate)
