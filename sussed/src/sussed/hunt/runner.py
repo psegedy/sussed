@@ -548,15 +548,32 @@ class AutonomousRunner:
                 Listing.property_category == property_category,
             ]
 
-            # City. We hold the city condition separately so we can detect the
-            # common pitfall where `criteria.city` is a sreality region label
-            # (e.g. "brno-venkov", "jihomoravsky") that scoped the SCRAPE but
-            # doesn't appear in Listing.city (which stores actual town names
-            # like "Babice nad Svitavou"). If the city filter eliminates 100%
-            # of otherwise-matching listings, we fall back to no-city + warn.
+            # City. The same `criteria.city` string is used for two different
+            # purposes: (1) telling the scraper which sreality region/district
+            # to query, and (2) post-scrape DB filtering. For real city names
+            # like "Brno" these collide nicely, but for region/district scope
+            # keys like "brno-venkov" or "jihomoravsky" they don't — those
+            # keys never appear in Listing.city (which stores actual town
+            # names like "Babice nad Svitavou"). Detect known scope keys via
+            # the scraper's own routing tables and skip the city DB filter
+            # for those, silently.
+            from sussed.scrapers.sreality import SrealityScraper
+
             city_condition = None
             if criteria.city:
-                city_condition = Listing.city.ilike(f"%{criteria.city}%")
+                key = criteria.city.lower().strip()
+                is_scope_key = (
+                    key in SrealityScraper.REGION_IDS
+                    or key in SrealityScraper.DISTRICT_IDS
+                )
+                if is_scope_key:
+                    logger.debug(
+                        f"city={criteria.city!r} is a sreality region/district "
+                        "scope key — skipping city DB filter (scrape already "
+                        "scoped to that region)."
+                    )
+                else:
+                    city_condition = Listing.city.ilike(f"%{criteria.city}%")
 
             # Apartment layouts only apply to flats, not houses/cottages/gardens.
             if is_apartment_search and criteria.apartment_types:
@@ -655,10 +672,9 @@ class AutonomousRunner:
             result = await session.execute(stmt)
             listings = result.scalars().all()
 
-            # Pitfall fallback: city scoped to zero but other criteria match.
-            # The user almost certainly set `city` to a sreality region label
-            # (brno-venkov, jihomoravsky) which can't match per-listing town
-            # names. Retry without city and warn loudly.
+            # Pitfall fallback: city we DID try to filter on matched 0 results
+            # but other criteria match plenty. Most likely a typo or an
+            # unknown locality. Retry without city and warn.
             if not listings and city_condition is not None:
                 fallback_stmt = (
                     select(Listing)
@@ -673,12 +689,10 @@ class AutonomousRunner:
                     logger.warning(
                         f"city={criteria.city!r} matched 0 listings but "
                         f"{len(fallback_listings)} listings match the other "
-                        "criteria. Falling back to no-city filter — your "
-                        "`city` value is probably a sreality region label "
-                        "(brno-venkov, jihomoravsky, etc.) that scoped the "
-                        "scrape but doesn't appear in stored city names. "
-                        "Set city to an actual town (e.g. 'Modřice') or "
-                        "leave it blank to silence this."
+                        "criteria. Falling back to no-city filter — check "
+                        "your `city` value for typos. (Sreality region/"
+                        "district scope keys like 'brno-venkov' are handled "
+                        "automatically and won't trigger this.)"
                     )
                     console.print(
                         f"[yellow]⚠ city={criteria.city!r} matched nothing — "
