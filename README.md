@@ -59,6 +59,10 @@ uv run sussed scrape -c brno -t rent
 # Scrape houses instead of apartments
 uv run sussed scrape -c brno -p house
 
+# Scrape cottages or garden plots
+uv run sussed scrape -c brno -p cottage
+uv run sussed scrape -c brno -p garden
+
 # Scrape only listings from the last day/week/month
 uv run sussed scrape -c brno -a day
 uv run sussed scrape -c brno -a week
@@ -69,7 +73,7 @@ uv run sussed scrape -c brno -a month
 |------|-------------|---------|
 | `-c, --city` | City to scrape (brno, praha, ostrava) | brno |
 | `-t, --type` | Listing type: sale or rent | sale |
-| `-p, --property` | Property type: apartment or house | apartment |
+| `-p, --property` | Property type: apartment, house, cottage, or garden | apartment |
 | `-a, --age` | Filter by listing age: day, week, or month | all |
 | `-m, --max-pages` | Maximum pages to scrape | all |
 | `-v, --verbose` | Enable debug logging | false |
@@ -128,7 +132,7 @@ uv run sussed review prepare abcdef12 --output .sussed/image-cache/abcdef12-prep
 uv run sussed review save abcdef12 --input .sussed/image-cache/abcdef12-review.json
 ```
 
-In Copilot CLI or Claude Code, invoke the `sussed-ai-review` skill to run this loop end-to-end. The skill uses the authenticated coding agent as the LLM/vision reviewer and `sussed` as the persistence layer — so no LLM API key ever lives inside the app.
+In Copilot CLI or Claude Code, invoke the right skill to run this loop end-to-end: `sussed-ai-review` for apartments, `sussed-cottage-review` for cottages, or `sussed-garden-review` for garden plots. Each skill uses the authenticated coding agent as the LLM/vision reviewer and `sussed` as the persistence layer — so no LLM API key ever lives inside the app.
 
 ### Autonomous Hunt Mode 🎯
 
@@ -143,6 +147,10 @@ uv run sussed hunt -c my_search.yaml
 
 # Scrape fresh data first, then hunt (recommended!)
 uv run sussed hunt -c my_search.yaml --scrape
+
+# Hunt cottages or garden plots with example configs
+uv run sussed hunt -c cottage_config.yaml --scrape
+uv run sussed hunt -c garden_config.yaml --scrape
 
 # Show top 5 best picks
 uv run sussed hunt -c my_search.yaml --best 5
@@ -159,6 +167,8 @@ uv run sussed hunt --rescore
 # Save results as JSON
 uv run sussed hunt --best 10 -f json -s results.json
 ```
+
+`sussed` now supports four property types: apartments, houses, cottages (chata/chalupa), and garden plots (zahrada/zahrádka). Apartment, cottage, and garden hunts each have their own AI review skill and example config.
 
 | Flag | Description | Default |
 |------|-------------|---------|

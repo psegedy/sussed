@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 import pytest
+from sqlmodel import delete
 
+from sussed.db.connection import close_db, get_session, init_db
+from sussed.db.models import Listing, ListingStatus, ListingType, PropertyCategory
 from sussed.hunt.config import RunnerConfig, ScoringWeights, SearchConfig, SearchCriteria
 from sussed.hunt.runner import AutonomousRunner
 from sussed.hunt.scorer import score_listing
@@ -44,6 +48,199 @@ def _minimal_listing(features: dict[str, Any] | None = None) -> dict[str, Any]:
         "image_count": 5,
         "features": features or {},
     }
+
+
+@pytest.mark.asyncio
+async def test_cottage_with_electricity_and_water_scores_higher_than_without() -> None:
+    config = SearchConfig(
+        criteria=SearchCriteria(
+            property_type="cottage",
+            require_electricity=True,
+            require_water=True,
+        ),
+        known_bad_locations=[],
+    )
+
+    with_utilities = await score_listing(
+        config,
+        _minimal_listing({"electricity": True, "water": True}),
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+    without_utilities = await score_listing(
+        config,
+        _minimal_listing(),
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+
+    assert with_utilities["score"] > without_utilities["score"]
+    assert "Electricity available (+30)" in with_utilities["highlights"]
+    assert "Water available (+30)" in with_utilities["highlights"]
+    assert "Missing electricity (required) (-150)" in without_utilities["red_flags"]
+    assert "Missing water (required) (-150)" in without_utilities["red_flags"]
+
+
+@pytest.mark.asyncio
+async def test_garden_with_fenced_and_personal_ownership_scores_higher() -> None:
+    config = SearchConfig(
+        criteria=SearchCriteria(property_type="garden"),
+        known_bad_locations=[],
+    )
+
+    owned_fenced = await score_listing(
+        config,
+        _minimal_listing(
+            {
+                "fenced": True,
+                "ownership": "Osobní vlastnictví",
+            }
+        ),
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+    bare_plot = await score_listing(
+        config,
+        _minimal_listing(),
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+
+    assert owned_fenced["score"] > bare_plot["score"]
+    assert "Fenced plot (+30)" in owned_fenced["highlights"]
+    assert "Osobní vlastnictví (+30)" in owned_fenced["highlights"]
+
+
+@pytest.mark.asyncio
+async def test_cottage_does_not_get_penalized_for_missing_elevator() -> None:
+    config = SearchConfig(
+        criteria=SearchCriteria(
+            property_type="cottage",
+            require_elevator=True,
+        ),
+        known_bad_locations=[],
+    )
+
+    result = await score_listing(
+        config,
+        _minimal_listing(),
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+
+    assert result["score"] == 400
+    assert not any("elevator" in flag.lower() for flag in result["red_flags"])
+
+
+@pytest.mark.asyncio
+async def test_garden_does_not_trigger_area_inflation_logic() -> None:
+    config = SearchConfig(
+        criteria=SearchCriteria(
+            property_type="garden",
+            max_price_per_m2=2_000,
+        ),
+        known_bad_locations=[],
+    )
+    listing = _minimal_listing()
+    listing.update(
+        {
+            "description": "Zahrada 850 m² se skladem 12 m² a pergolou.",
+            "area_m2": 850,
+            "price_per_m2": 1_500,
+        }
+    )
+
+    result = await score_listing(
+        config,
+        listing,
+        is_poa=True,
+        poa_price_threshold=1,
+    )
+
+    combined_notes = result["red_flags"] + result["reasons"]
+    assert not any("inflated" in note.lower() for note in combined_notes)
+    assert not any("usable" in note.lower() for note in combined_notes)
+
+
+@pytest.mark.asyncio
+async def test_runner_query_filters_cottage_property_category() -> None:
+    await close_db()
+    await init_db()
+    unique_city = "Outdoor Query Test City"
+    source = "pytest-hunt-cottage-query"
+    cottage_external_id = "pytest-cottage-category"
+    apartment_external_id = "pytest-apartment-category"
+
+    async with get_session() as session:
+        await session.execute(delete(Listing).where(Listing.source == source))
+        session.add(
+            Listing(
+                source=source,
+                external_id=cottage_external_id,
+                url="https://example.test/cottage",
+                title="Prodej chaty 45 m²",
+                price_czk=1_500_000,
+                listing_type=ListingType.SALE,
+                city=unique_city,
+                district="Test District",
+                property_category=PropertyCategory.COTTAGE,
+                area_m2=Decimal("45"),
+                features={},
+                raw_labels=[],
+                image_urls=[],
+                image_count=5,
+                has_floor_plan=False,
+                has_video=False,
+                has_3d_tour=False,
+                status=ListingStatus.ACTIVE,
+            )
+        )
+        session.add(
+            Listing(
+                source=source,
+                external_id=apartment_external_id,
+                url="https://example.test/apartment",
+                title="Prodej bytu 2+kk 45 m²",
+                price_czk=4_000_000,
+                listing_type=ListingType.SALE,
+                city=unique_city,
+                district="Test District",
+                property_category=PropertyCategory.APARTMENT,
+                apartment_type="2+kk",
+                area_m2=Decimal("45"),
+                features={},
+                raw_labels=[],
+                image_urls=[],
+                image_count=5,
+                has_floor_plan=False,
+                has_video=False,
+                has_3d_tour=False,
+                status=ListingStatus.ACTIVE,
+            )
+        )
+
+    try:
+        config = SearchConfig(
+            criteria=SearchCriteria(
+                city=unique_city,
+                property_type="cottage",
+            ),
+            runner=RunnerConfig(
+                max_listings_to_process=10,
+                skip_already_scored=False,
+                use_llm=False,
+            ),
+        )
+
+        results = await AutonomousRunner(config)._get_matching_listings()
+
+        external_ids = {listing["external_id"] for listing in results}
+        assert cottage_external_id in external_ids
+        assert apartment_external_id not in external_ids
+    finally:
+        async with get_session() as session:
+            await session.execute(delete(Listing).where(Listing.source == source))
+        await close_db()
 
 
 @pytest.mark.asyncio

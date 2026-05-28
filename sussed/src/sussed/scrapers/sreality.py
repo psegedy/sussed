@@ -23,6 +23,8 @@ from loguru import logger
 
 from sussed.config import get_settings
 from sussed.models.sreality import (
+    SREALITY_COTTAGE_SUBCATEGORY_CODES,
+    SREALITY_GARDEN_SUBCATEGORY_CODES,
     SrealityV1Detail,
     SrealityV1DetailResponse,
     SrealityV1Estate,
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
     from sussed.db.models import Listing
 
 SearchParam = tuple[str, str | int]
+CategorySubFilter = tuple[int, ...]
 
 
 class SrealityScraper:
@@ -98,6 +101,12 @@ class SrealityScraper:
         "week": 8,
         "month": 31,
     }
+    PROPERTY_FILTERS: ClassVar[dict[str, tuple[int, CategorySubFilter | None]]] = {
+        "apartment": (1, None),
+        "house": (2, None),
+        "cottage": (2, SREALITY_COTTAGE_SUBCATEGORY_CODES),
+        "garden": (3, SREALITY_GARDEN_SUBCATEGORY_CODES),
+    }
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -152,6 +161,15 @@ class SrealityScraper:
         logger.warning(f"Unknown city/region: {city}")
         return []
 
+    def _get_property_filter(self, property_type: str) -> tuple[int, CategorySubFilter | None]:
+        """Return v1 main category and optional subcategory filter for a property type."""
+        property_type_normalized = property_type.lower().strip()
+        try:
+            return self.PROPERTY_FILTERS[property_type_normalized]
+        except KeyError as err:
+            valid_types = ", ".join(sorted(self.PROPERTY_FILTERS))
+            raise ValueError(f"Unsupported property type: {property_type}. Use one of: {valid_types}") from err
+
     def _build_search_params(
         self,
         *,
@@ -159,6 +177,7 @@ class SrealityScraper:
         limit: int,
         category_main: int,
         category_type: int,
+        category_sub: CategorySubFilter | None,
         locality_params: list[SearchParam] | None,
         advert_age_to: int | None,
     ) -> list[SearchParam]:
@@ -169,6 +188,9 @@ class SrealityScraper:
             ("category_type_cb", category_type),
             ("locality_country_id", 112),
         ]
+        if category_sub:
+            # v1 honors comma-separated subcategory codes; repeated params keep only the first value.
+            params.append(("category_sub_cb", ",".join(str(code) for code in category_sub)))
         if locality_params:
             params.extend(locality_params)
 
@@ -190,6 +212,7 @@ class SrealityScraper:
         limit: int = MAX_LIMIT,
         category_main: int = 1,
         category_type: int = 1,
+        category_sub: CategorySubFilter | None = None,
         locality_params: list[SearchParam] | None = None,
         advert_age_to: int | None = None,
     ) -> SrealityV1SearchResponse | None:
@@ -201,6 +224,7 @@ class SrealityScraper:
             limit=limit,
             category_main=category_main,
             category_type=category_type,
+            category_sub=category_sub,
             locality_params=locality_params,
             advert_age_to=advert_age_to,
         )
@@ -236,7 +260,8 @@ class SrealityScraper:
     ):
         """Scrape listings from sreality."""
         category_type = 1 if listing_type == "sale" else 2
-        category_main = 1 if property_type == "apartment" else 2
+        property_type = property_type.lower().strip()
+        category_main, category_sub = self._get_property_filter(property_type)
         locality_params = self._get_locality_params(city) if city else None
 
         if isinstance(max_age, int):
@@ -258,6 +283,7 @@ class SrealityScraper:
                 limit=self.MAX_LIMIT,
                 category_main=category_main,
                 category_type=category_type,
+                category_sub=category_sub,
                 locality_params=locality_params,
                 advert_age_to=advert_age_to,
             )
@@ -296,6 +322,7 @@ class SrealityScraper:
                     limit=effective_limit,
                     category_main=category_main,
                     category_type=category_type,
+                    category_sub=category_sub,
                     locality_params=locality_params,
                     advert_age_to=advert_age_to,
                 )
@@ -378,8 +405,8 @@ def _build_listing_url(estate: SrealityV1Estate | SrealityV1Detail) -> str:
     category_sub = _named_int(estate.category_sub_cb)
 
     type_seo = "prodej" if category_type == 1 else "pronajem"
-    cat_seo = "byt" if category_main == 1 else ("dum" if category_main == 2 else "nemovitost")
-    apt = get_apartment_type(category_sub) or "x"
+    cat_seo = _category_seo_slug(category_main, category_sub)
+    apt = _subtype_seo_slug(category_main, category_sub)
     slug_parts = [
         estate.locality.city_seo_name,
         estate.locality.citypart_seo_name,
@@ -387,6 +414,49 @@ def _build_listing_url(estate: SrealityV1Estate | SrealityV1Detail) -> str:
     ]
     locality_slug = "-".join(part for part in slug_parts if part) or "cz"
     return f"https://www.sreality.cz/detail/{type_seo}/{cat_seo}/{apt}/{locality_slug}/{estate.hash_id}"
+
+
+def _category_seo_slug(category_main: int | None, category_sub: int | None) -> str:
+    """Return a sensible top-level URL slug for a v1 property category."""
+    if category_main == 1:
+        return "byt"
+    if category_main == 2:
+        if category_sub == 33:
+            return "chata"
+        if category_sub == 43:
+            return "chalupa"
+        return "dum"
+    if category_main == 3:
+        if category_sub in SREALITY_GARDEN_SUBCATEGORY_CODES:
+            return "zahrada"
+        return "pozemek"
+    if category_main == 4:
+        return "komercni"
+    return "nemovitost"
+
+
+def _subtype_seo_slug(category_main: int | None, category_sub: int | None) -> str:
+    """Return the detail URL subtype slug."""
+    if category_main == 1:
+        return get_apartment_type(category_sub) or "x"
+    subtype_map = {
+        33: "chata",
+        34: "garaz",
+        35: "pamatka-jine",
+        37: "rodinny-dum",
+        39: "vila",
+        40: "na-klic",
+        43: "chalupa",
+        44: "zemedelska-usedlost",
+        18: "komercni",
+        19: "bydleni",
+        20: "pole",
+        21: "les",
+        22: "louka",
+        23: "zahrada",
+        24: "ostatni",
+    }
+    return subtype_map.get(category_sub, "x")
 
 
 def parse_v1_source_date(detail: SrealityV1Detail) -> datetime | None:
@@ -405,6 +475,13 @@ def _named_value_is_positive(named_value: SrealityV1NamedValue | None) -> bool:
     """Return True when a named value represents a positive/yes value."""
     value = _named_int(named_value)
     return bool(value and value > 0)
+
+
+def _named_value_names(named_values: list[SrealityV1NamedValue] | None) -> list[str]:
+    """Extract non-empty names from v1 list-valued detail fields."""
+    if not named_values:
+        return []
+    return [value.name for value in named_values if value.name]
 
 
 def _premise_name(premise: dict[str, Any] | None) -> str | None:
@@ -445,6 +522,16 @@ def set_features_from_v1_detail(listing: Listing, detail: SrealityV1Detail) -> N
     features["parking"] = features["garage"] or features["parking_lots"]
     features["elevator"] = _named_value_is_positive(detail.elevator)
     features["furnished"] = detail.furnished.value if detail.furnished else None
+    features["ownership"] = detail.ownership.name if detail.ownership else None
+    electricity_sources = _named_value_names(detail.electricity_set)
+    water_sources = _named_value_names(detail.water_set)
+    sewage_sources = _named_value_names(detail.waste_set)
+    features["electricity"] = bool(electricity_sources)
+    features["electricity_sources"] = electricity_sources
+    features["water"] = bool(water_sources)
+    features["water_sources"] = water_sources
+    features["sewage"] = bool(sewage_sources)
+    features["sewage_sources"] = sewage_sources
     features["building_condition"] = building_condition
     features["building_type"] = building_type
     features["brick"] = building_type == "Cihlová"

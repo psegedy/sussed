@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.sql import text
 from sqlmodel import SQLModel
 
 from sussed.config import get_settings
@@ -77,6 +78,9 @@ async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text("ALTER TYPE propertycategory ADD VALUE IF NOT EXISTS 'COTTAGE'"))
+            await conn.execute(text("ALTER TYPE propertycategory ADD VALUE IF NOT EXISTS 'GARDEN'"))
 
 
 async def close_db() -> None:

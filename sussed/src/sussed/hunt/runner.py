@@ -28,6 +28,13 @@ from sussed.hunt.scorer import score_listing
 
 console = Console()
 
+PROPERTY_TYPE_TO_CATEGORY = {
+    "apartment": "APARTMENT",
+    "house": "HOUSE",
+    "cottage": "COTTAGE",
+    "garden": "GARDEN",
+}
+
 
 def sort_key(listing: dict[str, Any], config: SearchConfig) -> tuple[Any, ...]:
     """Sort-key tuple for ranking processed listings.
@@ -505,27 +512,34 @@ class AutonomousRunner:
         from sqlmodel import and_, or_, select
 
         from sussed.db.connection import get_session
-        from sussed.db.models import Listing, ListingStatus
+        from sussed.db.models import Listing, ListingStatus, PropertyCategory
 
         criteria = self.config.criteria
         runner = self.config.runner
+        property_type = criteria.property_type or "apartment"
+        property_category = PropertyCategory[PROPERTY_TYPE_TO_CATEGORY[property_type]]
+        is_apartment_search = property_type == "apartment"
 
         logger.debug(
-            f"Query criteria: city={criteria.city}, types={criteria.apartment_types}, min_photos={criteria.min_photos}"
+            f"Query criteria: city={criteria.city}, property_type={property_type}, "
+            f"types={criteria.apartment_types}, min_photos={criteria.min_photos}"
         )
         logger.debug(
             f"Runner config: skip_scored={runner.skip_already_scored}, max_process={runner.max_listings_to_process}"
         )
 
         async with get_session() as session:
-            conditions = [Listing.status == ListingStatus.ACTIVE]
+            conditions = [
+                Listing.status == ListingStatus.ACTIVE,
+                Listing.property_category == property_category,
+            ]
 
             # City
             if criteria.city:
                 conditions.append(Listing.city.ilike(f"%{criteria.city}%"))
 
-            # Apartment types
-            if criteria.apartment_types:
+            # Apartment layouts only apply to flats, not houses/cottages/gardens.
+            if is_apartment_search and criteria.apartment_types:
                 conditions.append(Listing.apartment_type.in_(criteria.apartment_types))
 
             # Price range (but include POA listings!)
@@ -554,14 +568,14 @@ class AutonomousRunner:
             if criteria.max_area_m2:
                 conditions.append(Listing.area_m2 <= Decimal(str(criteria.max_area_m2)))
 
-            # Floor
-            if criteria.avoid_ground_floor or criteria.reject_ground_floor:
+            # Floor filters only make sense for apartments.
+            if is_apartment_search and (criteria.avoid_ground_floor or criteria.reject_ground_floor):
                 conditions.append(or_(Listing.floor.is_(None), Listing.floor > 0))
 
-            if criteria.min_floor is not None:
+            if is_apartment_search and criteria.min_floor is not None:
                 conditions.append(or_(Listing.floor.is_(None), Listing.floor >= criteria.min_floor))
 
-            if criteria.max_floor is not None:
+            if is_apartment_search and criteria.max_floor is not None:
                 conditions.append(or_(Listing.floor.is_(None), Listing.floor <= criteria.max_floor))
 
             # Districts

@@ -112,7 +112,7 @@ def scrape(
         "apartment",
         "--property",
         "-p",
-        help="Property type: apartment or house",
+        help="Property type: apartment, house, cottage, or garden",
     ),
     max_age: str | None = typer.Option(
         None,
@@ -133,8 +133,17 @@ def scrape(
         help="Enable verbose logging",
     ),
 ) -> None:
-    """Scrape listings from real estate portals 🕷️"""
+    """Scrape apartments, houses, cottages, or gardens from real estate portals 🕷️"""
     setup_logging(verbose)
+
+    valid_property_types = {"apartment", "house", "cottage", "garden"}
+    property_type = property_type.lower().strip()
+    if property_type not in valid_property_types:
+        console.print(
+            "[red]Invalid --property value: "
+            f"{property_type}. Use: apartment, house, cottage, or garden[/red]"
+        )
+        raise typer.Exit(1)
 
     # Validate max_age option
     if max_age and max_age not in ("day", "week", "month") and not max_age.isdigit():

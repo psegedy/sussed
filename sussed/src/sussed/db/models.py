@@ -38,6 +38,8 @@ class PropertyCategory(str, Enum):
     APARTMENT = "apartment"
     HOUSE = "house"
     LAND = "land"
+    COTTAGE = "cottage"
+    GARDEN = "garden"
     COMMERCIAL = "commercial"
     OTHER = "other"
 

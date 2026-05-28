@@ -31,7 +31,7 @@ async def run_scrape(
     Args:
         city: City to scrape (e.g., "brno", "praha")
         listing_type: "sale" or "rent"
-        property_type: "apartment" or "house"
+        property_type: "apartment", "house", "cottage", or "garden"
         max_pages: Maximum pages to scrape (None = all)
         max_age: Filter by listing age - "day", "week", "month" or None for all
 

@@ -278,6 +278,9 @@ class SrealityV1Detail(SrealityV1Estate):
     ownership: SrealityV1NamedValue | None = None
     furnished: SrealityV1NamedValue | None = None
     elevator: SrealityV1NamedValue | None = None
+    electricity_set: list[SrealityV1NamedValue] = Field(default_factory=list)  # type: ignore[assignment]
+    water_set: list[SrealityV1NamedValue] = Field(default_factory=list)  # type: ignore[assignment]
+    waste_set: list[SrealityV1NamedValue] = Field(default_factory=list)  # type: ignore[assignment]
     flat_class: SrealityV1NamedValue | None = None
     object_location: SrealityV1NamedValue | None = None
     easy_access: SrealityV1NamedValue | None = None
@@ -306,7 +309,11 @@ class SrealityV1DetailResponse(SrealityV1BaseModel):
     result: SrealityV1Detail
 
 
-# Mapping of apartment type codes to human-readable strings
+SREALITY_COTTAGE_SUBCATEGORY_CODES = (33, 43)
+SREALITY_GARDEN_SUBCATEGORY_CODES = (23,)
+
+
+# Mapping of apartment and house subtype codes to human-readable strings
 APARTMENT_TYPE_MAP = {
     2: "1+kk",
     3: "1+1",
@@ -320,11 +327,11 @@ APARTMENT_TYPE_MAP = {
     11: "5+1",
     12: "6+",
     16: "atypický",
+    33: "chata",
     37: "rodinný dům",
     39: "vila",
     43: "chalupa",
-    44: "chata",
-    47: "zemědělská usedlost",
+    44: "zemědělská usedlost",
 }
 
 

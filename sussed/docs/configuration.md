@@ -44,13 +44,15 @@ uv run sussed hunt --generate-config
 | `districts` | Specific districts to include | any |
 | `exclude_districts` | Districts to avoid | — |
 | `apartment_types` | Types like `[2+kk, 2+1, 3+kk]` | any |
-| `property_type` | `apartment` or `house` | `apartment` |
+| `property_type` | `apartment`, `house`, `cottage`, or `garden` | `apartment` |
 | `listing_type` | `sale` or `rent` | `sale` |
 | `min_price` | Minimum price in CZK | — |
 | `max_price` | Maximum price in CZK | — |
 | `max_price_per_m2` | Max price per m² (key metric!) | — |
-| `min_area_m2` | Minimum usable area in m² | — |
+| `min_area_m2` | Minimum usable area in m² (plot area for gardens) | — |
 | `max_area_m2` | Maximum area in m² | — |
+| `min_plot_size_m2` | Minimum plot size for cottages/gardens when known | — |
+| `min_indoor_area_m2` | Minimum indoor/living area for cottages when known | — |
 | `min_floor` | Minimum floor (0 = ground) | — |
 | `max_floor` | Maximum floor | — |
 | `avoid_ground_floor` | Skip ground floor listings | `false` |
@@ -58,6 +60,9 @@ uv run sussed hunt --generate-config
 | `require_parking` | Must have parking/garage | `false` |
 | `require_balcony` | Must have balcony/loggia/terrace | `false` |
 | `require_elevator` | Building must have elevator | `false` |
+| `require_electricity` | Cottage/garden must have electricity | `false` |
+| `require_water` | Cottage/garden must have water | `false` |
+| `require_fenced` | Garden/cottage plot must be fenced | `false` |
 | `reject_panel_building` | No panel buildings (panelák) | `false` |
 | `reject_ground_floor` | Hard reject ground floor | `false` |
 | `min_photos` | Min photos (few = hiding something) | `3` |
@@ -104,3 +109,9 @@ uv run sussed hunt --generate-config
 | `poa_evaluation_mode` | How to evaluate 1 Kč listings: `description_only`, `skip`, `estimate` | `description_only` |
 | `auto_scrape` | Scrape before processing | `false` |
 | `scrape_max_pages` | Max pages to scrape if auto_scrape enabled | `5` |
+
+## Property type examples
+
+For apartment hunts: see [`../search_config.yaml`](../search_config.yaml) or [`../simple_config.yaml`](../simple_config.yaml).
+For cottage hunts: see [`../cottage_config.yaml`](../cottage_config.yaml) (uses [`sussed-cottage-review` skill](../../.copilot/sussed-plugin/skills/sussed-cottage-review/SKILL.md)).
+For garden hunts: see [`../garden_config.yaml`](../garden_config.yaml) (uses [`sussed-garden-review` skill](../../.copilot/sussed-plugin/skills/sussed-garden-review/SKILL.md)).

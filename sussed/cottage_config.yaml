@@ -1,0 +1,84 @@
+# sussed cottage example config 🏡
+#
+# Tunable starting point for a Brno-area buyer looking for a weekend cottage
+# somewhere in Jihomoravský kraj. Copy this file and tweak the limits/keywords.
+# Usage:
+#   uv run sussed hunt --config cottage_config.yaml --scrape --scrape-pages 10
+
+name: Brno-area cottage hunt
+description: Weekend cottage search around Brno/Jihomoravský kraj under 4M CZK, with electricity and enough land to actually chill.
+
+criteria:
+  # Use the scraper's region key. It maps to Sreality locality_region_id=14 (Jihomoravský kraj).
+  city: jihomoravsky
+  property_type: cottage
+  listing_type: sale
+  max_price: 4000000
+  min_area_m2: 30.0 # Indoor usable area; plot-size filtering needs schema support below.
+  min_photos: 3
+  max_listing_age: 30
+  exclude_description_keywords: "dražba, exekuce, družstevní"
+
+  # Schema follow-up: SearchCriteria currently does not expose these cottage utility fields.
+  # Uncomment once sussed.hunt.config.SearchCriteria supports them.
+  min_plot_size_m2: 300
+  require_electricity: true
+  require_water: false  # Well/studna counts; municipal water is nice but not mandatory.
+
+scoring:
+  # New-build cottage is less important than condition, utilities, access, and land ownership.
+  bonus_new_building: 40
+  bonus_reconstruction: 120
+  bonus_very_good_condition: 90
+  penalty_no_parking: -40
+  penalty_no_balcony: 0
+  penalty_no_elevator: 0
+  penalty_panel: 0
+  penalize_description_keywords:
+    bez elektřiny: -180
+    bez vody: -90
+    pouze pěší přístup: -120
+    pronajatý pozemek: -250
+    družstevní: -200
+    k demolici: -250
+    nutná rekonstrukce: -100
+  bonus_description_keywords:
+    elektřina: 120
+    studna: 90
+    vodovod: 80
+    vlastní pozemek: 120
+    celoroční přístup: 120
+    příjezdová cesta: 80
+    u lesa: 70
+    les: 40
+    rybník: 50
+    přehrada: 50
+    krb: 40
+    sklep: 25
+
+output:
+  mode: best
+  limit: 15
+  include_analysis: true
+  format: table
+
+runner:
+  max_listings_to_process: 500
+  enrich_top_n: 100
+  fetch_descriptions: true
+  skip_already_scored: false
+  use_llm: true
+  llm_provider: anthropic
+  llm_analyze_top_n: 5
+  poa_evaluation_mode: description_only
+  auto_scrape: false # Prefer explicit `--scrape` so copying this config does not unexpectedly hit the API.
+  scrape_max_pages: 10
+
+notes_for_agent: >
+  Prefer a weekend cottage within reasonable driving distance of Brno, ideally near forest or water.
+  Year-round road access matters. Electricity is required. Water can be from a well or municipal supply.
+  Avoid družstvo, auctions, foreclosures, leased land, or unclear land ownership. A simple cottage is fine
+  if the structure is sound, the plot is usable, and there is space for outdoor sitting/gardening.
+
+# Region-wide search; keep empty unless you want to rank specific okres/municipalities higher.
+preferred_districts: []

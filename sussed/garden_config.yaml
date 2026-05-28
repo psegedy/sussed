@@ -1,0 +1,90 @@
+# sussed garden plot example config 🌱
+#
+# Tunable starting point for a Brno-suburbs garden/plot hunt.
+# Copy this file and tighten the preferred districts or keyword weights as you learn the market.
+# Usage:
+#   uv run sussed hunt --config garden_config.yaml --scrape --scrape-pages 10
+
+name: Brno garden plot hunt
+description: Garden plot search in Brno suburbs under 1.5M CZK, prioritizing fenced plots with water and electricity.
+
+criteria:
+  # Brno-venkov maps to the Sreality district around Brno; use `brno` for city-only results.
+  city: brno-venkov
+  property_type: garden
+  listing_type: sale
+  max_price: 1500000
+  min_area_m2: 300.0 # For garden listings this is the advertised plot area.
+  max_area_m2: 1500.0
+  min_photos: 3
+  max_listing_age: 60
+  exclude_description_keywords: "dražba, exekuce, pronájem pozemku"
+
+  # Schema follow-up: SearchCriteria currently does not expose these garden utility fields.
+  # Uncomment once sussed.hunt.config.SearchCriteria supports them.
+  require_electricity: true
+  require_water: true
+  require_fenced: true
+
+scoring:
+  # Gardens care about utilities, ownership, access, and fences more than building condition.
+  bonus_new_building: 0
+  bonus_reconstruction: 0
+  bonus_very_good_condition: 30
+  penalty_no_parking: 0
+  penalty_no_balcony: 0
+  penalty_no_elevator: 0
+  penalty_panel: 0
+  penalize_description_keywords:
+    pronájem pozemku: -300
+    pacht: -250
+    bez elektřiny: -180
+    bez vody: -180
+    neoploceno: -120
+    nezpevněná cesta: -70
+    bez příjezdu: -160
+    spoluvlastnický podíl: -220
+  bonus_description_keywords:
+    elektřina: 120
+    voda na pozemku: 140
+    studna: 100
+    oplocený: 120
+    oploceno: 120
+    vlastní pozemek: 150
+    osobní vlastnictví: 150
+    zahradní domek: 70
+    chata: 50
+    příjezdová cesta: 80
+    parkování: 50
+
+output:
+  mode: best
+  limit: 15
+  include_analysis: true
+  format: table
+
+runner:
+  max_listings_to_process: 500
+  enrich_top_n: 100
+  fetch_descriptions: true
+  skip_already_scored: false
+  use_llm: true
+  llm_provider: anthropic
+  llm_analyze_top_n: 5
+  poa_evaluation_mode: description_only
+  auto_scrape: false # Prefer explicit `--scrape` so copying this config does not unexpectedly hit the API.
+  scrape_max_pages: 10
+
+notes_for_agent: >
+  Prefer personal ownership, not družstevní/leased land. Water on the plot, electricity, and fencing are
+  high-priority. A basic shed or small chata is acceptable, but the plot should be usable for gardening
+  and weekend relaxation. Prefer locations within roughly 30 minutes of Brno center with reasonable car access.
+
+preferred_districts:
+  - Brno-venkov
+  - Modřice
+  - Šlapanice
+  - Kuřim
+  - Rosice
+  - Tišnov
+  - Ivančice

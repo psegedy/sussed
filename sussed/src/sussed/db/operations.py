@@ -23,7 +23,12 @@ from sussed.db.models import (
     ScrapeRun,
     VibeCheck,
 )
-from sussed.models.sreality import SrealityEstate, get_apartment_type
+from sussed.models.sreality import (
+    SREALITY_COTTAGE_SUBCATEGORY_CODES,
+    SREALITY_GARDEN_SUBCATEGORY_CODES,
+    SrealityEstate,
+    get_apartment_type,
+)
 from sussed.scrapers.sreality import (
     _build_listing_url,
     extract_area_from_title,
@@ -58,14 +63,30 @@ def _listing_type_from_sreality(estate: SrealityEstate) -> ListingType:
 
 
 def _property_category_from_sreality(estate: SrealityEstate) -> PropertyCategory:
-    """Map sreality category main code to internal property category."""
+    """Map sreality category main/sub codes to internal property category."""
+    category_main = estate.category_main_cb.int_value
+    category_sub = estate.category_sub_cb.int_value
+    if category_main == 2 and category_sub in SREALITY_COTTAGE_SUBCATEGORY_CODES:
+        return PropertyCategory.COTTAGE
+    if category_main == 3 and category_sub in SREALITY_GARDEN_SUBCATEGORY_CODES:
+        return PropertyCategory.GARDEN
+
     category_map = {
         1: PropertyCategory.APARTMENT,
         2: PropertyCategory.HOUSE,
         3: PropertyCategory.LAND,
         4: PropertyCategory.COMMERCIAL,
     }
-    return category_map.get(estate.category_main_cb.int_value, PropertyCategory.OTHER)
+    return category_map.get(category_main, PropertyCategory.OTHER)
+
+
+def _apartment_type_from_sreality(
+    estate: SrealityEstate, property_category: PropertyCategory
+) -> str | None:
+    """Map sreality subtype to apartment layout only for apartment listings."""
+    if property_category != PropertyCategory.APARTMENT:
+        return None
+    return get_apartment_type(estate.category_sub_cb.int_value)
 
 
 def _address_from_sreality(estate: SrealityEstate) -> str | None:
@@ -126,6 +147,8 @@ async def upsert_listing_from_sreality(
     new_price_per_m2 = _price_per_m2_from_sreality(estate)
     area = extract_area_from_title(estate.advert_name)
     image_count = _image_count_from_sreality(estate)
+    property_category = _property_category_from_sreality(estate)
+    apartment_type = _apartment_type_from_sreality(estate, property_category)
 
     now = datetime.utcnow()
     is_new = existing is None
@@ -187,8 +210,8 @@ async def upsert_listing_from_sreality(
         listing.address = _address_from_sreality(estate)
         listing.latitude = _decimal_from_float(estate.locality.gps_lat)
         listing.longitude = _decimal_from_float(estate.locality.gps_lon)
-        listing.property_category = _property_category_from_sreality(estate)
-        listing.apartment_type = get_apartment_type(estate.category_sub_cb.int_value)
+        listing.property_category = property_category
+        listing.apartment_type = apartment_type
         if listing.area_m2 is None or listing.area_m2 == 0:
             listing.area_m2 = area
         if listing.features is None:
@@ -219,8 +242,8 @@ async def upsert_listing_from_sreality(
             address=_address_from_sreality(estate),
             latitude=_decimal_from_float(estate.locality.gps_lat),
             longitude=_decimal_from_float(estate.locality.gps_lon),
-            property_category=_property_category_from_sreality(estate),
-            apartment_type=get_apartment_type(estate.category_sub_cb.int_value),
+            property_category=property_category,
+            apartment_type=apartment_type,
             area_m2=area,
             features={},
             raw_labels=[],

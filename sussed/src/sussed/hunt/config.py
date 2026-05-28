@@ -6,7 +6,7 @@ Define what you're looking for and let the hunt runner score it.
 
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -37,10 +37,15 @@ class SearchCriteria(BaseModel):
     # Property type
     apartment_types: list[str] | None = Field(
         default=None,
-        description="Types like ['2+kk', '2+1', '3+kk'] - None = any",
+        description="Apartment layouts like ['2+kk', '2+1', '3+kk'] - None = any. "
+        "Only applies when property_type is apartment.",
         examples=[["2+kk", "2+1"], ["3+kk", "3+1", "4+kk"]],
     )
-    property_type: str = Field(default="apartment", description="apartment or house")
+    property_type: Literal["apartment", "house", "cottage", "garden"] = Field(
+        default="apartment",
+        description="apartment, house, cottage, or garden",
+        examples=["apartment", "house", "cottage", "garden"],
+    )
     listing_type: str = Field(default="sale", description="sale or rent")
 
     # Price
@@ -49,8 +54,19 @@ class SearchCriteria(BaseModel):
     max_price_per_m2: int | None = Field(default=None, description="Max price per m² (key metric!)")
 
     # Size
-    min_area_m2: float | None = Field(default=None, description="Minimum usable area")
+    min_area_m2: float | None = Field(
+        default=None,
+        description="Minimum area (usable area for homes, plot area for gardens)",
+    )
     max_area_m2: float | None = Field(default=None, description="Maximum area (for budget)")
+    min_plot_size_m2: int | None = Field(
+        default=None,
+        description="Minimum plot size for cottages/gardens when known",
+    )
+    min_indoor_area_m2: float | None = Field(
+        default=None,
+        description="Minimum indoor/living area for cottages when known",
+    )
 
     # Floor
     min_floor: int | None = Field(default=None, description="Minimum floor (0 = ground floor)")
@@ -63,6 +79,9 @@ class SearchCriteria(BaseModel):
     require_parking: bool = Field(default=False, description="Must have parking/garage")
     require_balcony: bool = Field(default=False, description="Must have balcony/loggia/terrace")
     require_elevator: bool = Field(default=False, description="Building must have elevator")
+    require_electricity: bool = Field(default=False, description="Cottage/garden must have electricity")
+    require_water: bool = Field(default=False, description="Cottage/garden must have water")
+    require_fenced: bool = Field(default=False, description="Garden/cottage plot must be fenced")
 
     # Red flags to auto-reject
     reject_panel_building: bool = Field(default=False, description="No commie blocks (panelák)")
@@ -87,6 +106,14 @@ class SearchCriteria(BaseModel):
         """Accept list[str] from code and coerce to comma string."""
         if isinstance(v, list):
             return ", ".join(v)
+        return v
+
+    @field_validator("property_type", mode="before")
+    @classmethod
+    def normalize_property_type(cls, v: Any) -> Any:
+        """Allow user YAML to use uppercase/mixed-case property type values."""
+        if isinstance(v, str):
+            return v.lower().strip()
         return v
 
     def get_exclude_keywords(self) -> list[str]:
@@ -375,7 +402,7 @@ def generate_example_config(path: str | Path = "search_config.yaml") -> str:
     # Add header comment
     header = """# sussed Search Configuration 🏠
 #
-# This file defines what you're looking for in an apartment.
+# This file defines what you're looking for in a property.
 # Customize it and run: sussed hunt --config search_config.yaml
 #
 # Pro tips:

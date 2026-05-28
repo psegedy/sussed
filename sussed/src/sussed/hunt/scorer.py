@@ -60,6 +60,38 @@ ENERGY_RATINGS: dict[str, int] = {
     "penb f": -20,
 }
 
+OUTDOOR_PROPERTY_TYPES = {"cottage", "garden"}
+REQUIRED_OUTDOOR_FEATURE_PENALTY = -150
+
+
+def _property_type(criteria: Any) -> str:
+    """Return normalized property type from hunt criteria."""
+    return str(getattr(criteria, "property_type", "apartment") or "apartment").lower()
+
+
+def _is_outdoor_property(criteria: Any) -> bool:
+    """Return True for cottage/garden hunts that should skip apartment-only scoring."""
+    return _property_type(criteria) in OUTDOOR_PROPERTY_TYPES
+
+
+def _truthy_feature(features: dict[str, Any], *keys: str) -> bool:
+    """Interpret bool/string feature values from JSONB as a usable signal."""
+    falsey_strings = {"", "0", "false", "none", "no", "ne", "není", "bez"}
+    for key in keys:
+        value = features.get(key)
+        if isinstance(value, str):
+            if value.strip().lower() not in falsey_strings:
+                return True
+        elif value:
+            return True
+    return False
+
+
+def _text_has_any(text: str, phrases: tuple[str, ...]) -> bool:
+    """Return True when any phrase appears in normalized description/label text."""
+    return any(phrase in text for phrase in phrases)
+
+
 if TYPE_CHECKING:
     from sussed.hunt.config import SearchConfig
 
@@ -77,6 +109,10 @@ async def score_listing(
     """
     criteria = config.criteria
     scoring = config.scoring
+    property_type = _property_type(criteria)
+    is_outdoor_property = _is_outdoor_property(criteria)
+    is_cottage = property_type == "cottage"
+    is_garden = property_type == "garden"
 
     score = 400  # Start near "average" with room for differentiation
     reasons = []
@@ -208,6 +244,7 @@ async def score_listing(
     # === FEATURES ===
     labels = listing.get("raw_labels", []) or []
     labels_flat = [str(label).lower() for label in labels]
+    signal_text = f"{desc_lower} {' '.join(labels_flat)}"
 
     # Check for required features
     has_parking = bool(
@@ -253,11 +290,11 @@ async def score_listing(
         highlights.append("Has outdoor space")
         counted_feature_keys.add("balcony")
 
-    if criteria.require_elevator and not has_elevator:
+    if not is_outdoor_property and criteria.require_elevator and not has_elevator:
         score += scoring.penalty_no_elevator
         red_flags.append(f"Missing elevator (required) ({scoring.penalty_no_elevator})")
 
-    if has_elevator:
+    if not is_outdoor_property and has_elevator:
         score += 15
         highlights.append("Elevator available")
 
@@ -265,6 +302,91 @@ async def score_listing(
         score += 10
         highlights.append("Has cellar/storage")
         counted_feature_keys.add("cellar")
+
+    has_electricity = _truthy_feature(features_dict, "electricity", "electrical_power") or (
+        not _text_has_any(signal_text, ("bez elektř", "bez elektr", "elektřina není"))
+        and _text_has_any(signal_text, ("elektř", "elektr", "220v", "230v"))
+    )
+    has_water = _truthy_feature(features_dict, "water", "water_source") or (
+        not _text_has_any(signal_text, ("bez vody", "voda není"))
+        and _text_has_any(signal_text, ("vodovod", "voda", "studna", "vrt"))
+    )
+    has_sewage = _truthy_feature(features_dict, "sewage", "sewer", "sewerage") or _text_has_any(
+        signal_text,
+        ("kanalizace", "septik", "čistička", "čov", "jímka"),
+    )
+    has_fenced = _truthy_feature(features_dict, "fenced", "fence") or _text_has_any(
+        signal_text,
+        ("oplocen", "oplocení", "plotem", "plot"),
+    )
+    ownership_text = str(
+        features_dict.get("ownership") or features_dict.get("ownership_type") or ""
+    ).lower()
+    has_personal_ownership = "osob" in ownership_text or _text_has_any(
+        signal_text,
+        ("osobní vlastnictví", "osobním vlastnictví"),
+    )
+    leased_land = _text_has_any(
+        signal_text,
+        ("pronájem pozemku", "pozemek v pronájmu", "pronajatý pozemek", "nájem pozemku"),
+    )
+
+    if is_cottage:
+        if has_electricity:
+            score += 30
+            highlights.append("Electricity available (+30)")
+        elif criteria.require_electricity:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(
+                f"Missing electricity (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})"
+            )
+
+        if has_water:
+            score += 30
+            highlights.append("Water available (+30)")
+        elif criteria.require_water:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(f"Missing water (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
+
+        if has_sewage:
+            score += 20
+            highlights.append("Sewage/wastewater solution (+20)")
+
+        if criteria.require_fenced and not has_fenced:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(f"Missing fencing (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
+
+    if is_garden:
+        if has_fenced:
+            score += 30
+            highlights.append("Fenced plot (+30)")
+        elif criteria.require_fenced:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(f"Missing fencing (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
+
+        if has_water:
+            score += 40
+            highlights.append("Water on plot (+40)")
+        elif criteria.require_water:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(f"Missing water (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
+
+        if has_electricity:
+            score += 40
+            highlights.append("Electricity on plot (+40)")
+        elif criteria.require_electricity:
+            score += REQUIRED_OUTDOOR_FEATURE_PENALTY
+            red_flags.append(
+                f"Missing electricity (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})"
+            )
+
+        if has_personal_ownership:
+            score += 30
+            highlights.append("Osobní vlastnictví (+30)")
+
+        if leased_land:
+            score += -150
+            red_flags.append("Leased land / pronájem pozemku (-150)")
 
     if features_dict.get("new_building"):
         score += scoring.bonus_new_building
@@ -316,7 +438,7 @@ async def score_listing(
     floor = listing.get("floor")
     total_floors = listing.get("total_floors")
 
-    if floor is not None:
+    if not is_outdoor_property and floor is not None:
         if floor == 0 and (criteria.avoid_ground_floor or criteria.reject_ground_floor):
             score -= 75
             red_flags.append("Ground floor")
@@ -333,6 +455,8 @@ async def score_listing(
     if description:
         # Red flag keywords - things that suggest problems or overselling
         sketchy_keywords = dict(SKETCHY_KEYWORDS)
+        if is_outdoor_property:
+            sketchy_keywords.pop("bez výtahu", None)
 
         # Merge user-defined penalty keywords from config (lowercased for matching)
         if scoring.penalize_description_keywords:
