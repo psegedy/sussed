@@ -41,6 +41,14 @@ class PreparedListingReview(BaseModel):
         default=False,
         description="True if listing currently is POA (≤10 CZK) and had a prior real price.",
     )
+    property_category: str | None = Field(
+        default=None,
+        description=(
+            "Property kind from the DB enum: 'apartment', 'house', 'cottage', "
+            "'garden', etc. Use this to dispatch to the right AI review skill "
+            "(sussed-ai-review / sussed-cottage-review / sussed-garden-review)."
+        ),
+    )
     listing_type: str | None = None
     city: str
     district: str | None = None

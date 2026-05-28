@@ -113,7 +113,7 @@ def test_v1_url_builder_uses_cottage_slug_for_chata() -> None:
         }
     )
 
-    assert _build_listing_url(estate).endswith("/detail/prodej/chata/chata/brno/123")
+    assert _build_listing_url(estate).endswith("/detail/prodej/dum/chata/brno/123")
 
 
 def test_v1_url_builder_uses_garden_slug_for_zahrada() -> None:
@@ -128,7 +128,7 @@ def test_v1_url_builder_uses_garden_slug_for_zahrada() -> None:
         }
     )
 
-    assert _build_listing_url(estate).endswith("/detail/prodej/zahrada/zahrada/brno/456")
+    assert _build_listing_url(estate).endswith("/detail/prodej/pozemek/zahrada/brno/456")
 
 
 def test_v1_image_url_normalizer_adds_https_and_download_transform() -> None:

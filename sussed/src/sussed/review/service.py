@@ -122,6 +122,9 @@ def prepare_review_payload_from_listing(
         "initial_price": initial_price,
         "original_price": original_price,
         "price_dropped_to_poa": dropped_to_poa,
+        "property_category": (
+            listing.property_category.value if listing.property_category else None
+        ),
         "listing_type": listing.listing_type.value if listing.listing_type else None,
         "city": listing.city,
         "district": listing.district,
@@ -157,6 +160,7 @@ async def get_review_candidates(
     max_age_days: int | None = None,
     min_quick_score: int | None = None,
     order_by_recent: bool = False,
+    property_type: str | None = None,
 ) -> list[Listing]:
     """Get active listings ordered by review priority.
 
@@ -168,6 +172,9 @@ async def get_review_candidates(
 
     If ``order_by_recent`` is True, sort by ``first_seen_at DESC`` instead of the default
     review-priority heuristic.
+
+    If ``property_type`` is set ('apartment'/'house'/'cottage'/'garden'), only include
+    listings of that PropertyCategory. Match is case-insensitive against the enum value.
     """
     if limit <= 0:
         return []
@@ -178,6 +185,17 @@ async def get_review_candidates(
     conditions = [Listing.status == ListingStatus.ACTIVE]
     if city:
         conditions.append(Listing.city.ilike(f"%{city}%"))
+    if property_type:
+        try:
+            from sussed.db.models import PropertyCategory
+
+            cat = PropertyCategory(property_type.lower())
+            conditions.append(Listing.property_category == cat)
+        except ValueError as exc:
+            valid = ", ".join(c.value for c in PropertyCategory)
+            raise ValueError(
+                f"Unknown property_type {property_type!r}. Valid: {valid}"
+            ) from exc
     if max_age_days is not None:
         freshness_cutoff = _utcnow() - timedelta(days=max_age_days)
         conditions.append(Listing.first_seen_at >= freshness_cutoff)
@@ -216,6 +234,7 @@ async def get_reviewed_picks(
     district: str | None = None,
     min_score: int | None = None,
     max_age_days: int | None = None,
+    property_type: str | None = None,
     limit: int = 20,
 ) -> list[Listing]:
     """Get active listings, optionally filtered by AI review status."""
@@ -235,6 +254,18 @@ async def get_reviewed_picks(
     if max_age_days is not None:
         cutoff = _utcnow() - timedelta(days=max_age_days)
         conditions.append(Listing.first_seen_at >= cutoff)
+
+    if property_type:
+        from sussed.db.models import PropertyCategory
+
+        try:
+            cat = PropertyCategory(property_type.lower())
+            conditions.append(Listing.property_category == cat)
+        except ValueError as exc:
+            valid = ", ".join(c.value for c in PropertyCategory)
+            raise ValueError(
+                f"Unknown property_type {property_type!r}. Valid: {valid}"
+            ) from exc
 
     stmt = select(Listing).where(*conditions)
     stmt = stmt.order_by(

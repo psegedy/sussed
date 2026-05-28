@@ -40,15 +40,15 @@ Run from the Python project directory (`sussed/` inside the repo/worktree).
 
 3. **List candidates** ranked by recency and quick score:
    ```bash
-   uv run sussed review candidates --limit 20 --max-age-days 30 --min-quick-score 450 --recent
+   uv run sussed review candidates --limit 20 --max-age-days 30 --min-quick-score 450 --recent -p cottage
    ```
-   Cottage inventory moves slower than apartments, so `--max-age-days 30` is reasonable; tighten it for hot searches.
+   Cottage inventory moves slower than apartments, so `--max-age-days 30` is reasonable; tighten it for hot searches. The `-p cottage` flag is **required** — without it, you'd review apartments by mistake.
 
 4. **Prepare** a selected listing — use the **first 8 hex chars** of the UUID as prefix (no dashes):
    ```bash
    uv run sussed review prepare abcdef12 --output .sussed/image-cache/abcdef12-prepared.json
    ```
-   For batches: `uv run sussed review prepare-batch -n 50 --max-age-days 30 --min-quick-score 450 --recent`.
+   For batches: `uv run sussed review prepare-batch -n 50 --max-age-days 30 --min-quick-score 450 --recent -p cottage`.
 
 5. **Inspect the prepared JSON.** Read `description`, `detail_items`, `features`, `price_history`, `image_urls`, `image_paths`, `input_hash`, and the top-level price-drop signals: `initial_price`, `original_price`, `price_dropped_to_poa`. If `price_dropped_to_poa` is true, flag the POA switch in `yellow_flags`/`red_flags` and `score_reason`.
 
@@ -90,10 +90,10 @@ Run from the Python project directory (`sussed/` inside the repo/worktree).
 ## Viewing results
 
 ```bash
-uv run sussed review picks                       # top reviewed picks
-uv run sussed review picks --all                 # include unreviewed
-uv run sussed review picks --min-score 700       # only high scorers
-uv run sussed review picks -f json               # JSON output
+uv run sussed review picks -p cottage                # top cottage picks only
+uv run sussed review picks -p cottage --all          # include unreviewed
+uv run sussed review picks -p cottage --min-score 700  # only high scorers
+uv run sussed review picks -p cottage -f json        # JSON output
 ```
 
 ## Common Mistakes

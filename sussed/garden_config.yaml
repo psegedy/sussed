@@ -9,11 +9,10 @@ name: Brno garden plot hunt
 description: Garden plot search in Brno suburbs under 1.5M CZK, prioritizing fenced plots with water and electricity.
 
 criteria:
-  # `city` here is the sreality scrape locality (brno-venkov = district id 73).
-  # Because it contains a hyphen, the hunt runner treats it as a region label
-  # and SKIPS the city DB filter so all scraped villages (Babice, Modřice,
-  # Tvarožná, etc.) match. To narrow to a specific town, replace with that
-  # town's exact city name, e.g. `city: Modřice`.
+  # Scrape locality (sreality district = brno-venkov, surrounding villages).
+  # The hunt runner recognizes this as a scope key and skips per-listing city
+  # filtering automatically. To narrow to a specific town, swap in an exact
+  # city name like `Modřice`.
   city: brno-venkov
   property_type: garden
   listing_type: sale

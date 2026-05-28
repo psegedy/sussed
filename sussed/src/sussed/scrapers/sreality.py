@@ -417,18 +417,21 @@ def _build_listing_url(estate: SrealityV1Estate | SrealityV1Detail) -> str:
 
 
 def _category_seo_slug(category_main: int | None, category_sub: int | None) -> str:
-    """Return a sensible top-level URL slug for a v1 property category."""
+    """Return the top-level URL slug for a v1 property category.
+
+    Sreality URLs are ``/detail/<type>/<category>/<subtype>/...``. The category
+    slug is the BROAD bucket (byt/dum/pozemek/komercni). The narrow type
+    (chata, chalupa, zahrada, rodinny-dum, etc.) belongs in the SUBTYPE slot,
+    handled by ``_subtype_seo_slug``. So a cottage URL is ``dum/chata/...``,
+    not ``chata/chata/...``, and a garden URL is ``pozemek/zahrada/...``,
+    not ``zahrada/zahrada/...``.
+    """
+    del category_sub  # subtype handled separately
     if category_main == 1:
         return "byt"
     if category_main == 2:
-        if category_sub == 33:
-            return "chata"
-        if category_sub == 43:
-            return "chalupa"
         return "dum"
     if category_main == 3:
-        if category_sub in SREALITY_GARDEN_SUBCATEGORY_CODES:
-            return "zahrada"
         return "pozemek"
     if category_main == 4:
         return "komercni"

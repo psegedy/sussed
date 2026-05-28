@@ -42,15 +42,15 @@ Run from the Python project directory (`sussed/` inside the repo/worktree).
 
 3. **List candidates** ranked by recency and quick score:
    ```bash
-   uv run sussed review candidates --limit 20 --max-age-days 7 --min-quick-score 450 --recent
+   uv run sussed review candidates --limit 20 --max-age-days 7 --min-quick-score 450 --recent -p garden
    ```
-   Prefer `--max-age-days 7` for fresh inventory; drop it only if the fresh queue runs dry.
+   Prefer `--max-age-days 7` for fresh inventory; drop it only if the fresh queue runs dry. The `-p garden` flag is **required** — without it, you'd review apartments by mistake.
 
 4. **Prepare** a selected listing — use the **first 8 hex chars** of the UUID as prefix (no dashes):
    ```bash
    uv run sussed review prepare abcdef12 --output .sussed/image-cache/abcdef12-prepared.json
    ```
-   For batches: `uv run sussed review prepare-batch -n 50 --max-age-days 7 --min-quick-score 450 --recent`.
+   For batches: `uv run sussed review prepare-batch -n 50 --max-age-days 7 --min-quick-score 450 --recent -p garden`.
 
 5. **Inspect the prepared JSON.** Read `title`, `description`, `detail_items`, `features`, `raw_labels`, `price_history`, `image_urls`, `image_paths`, `input_hash`, and price-drop signals. Gardens do not have meaningful `apartment_type`, `floor`, or `elevator` expectations.
 
@@ -89,10 +89,10 @@ Run from the Python project directory (`sussed/` inside the repo/worktree).
 ## Viewing results
 
 ```bash
-uv run sussed review picks
-uv run sussed review picks --all
-uv run sussed review picks --min-score 700
-uv run sussed review picks -f json
+uv run sussed review picks -p garden                 # top garden picks only
+uv run sussed review picks -p garden --all           # include unreviewed
+uv run sussed review picks -p garden --min-score 700 # only high scorers
+uv run sussed review picks -p garden -f json         # JSON output
 ```
 
 ## Common Mistakes

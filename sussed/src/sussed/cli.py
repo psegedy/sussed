@@ -1088,6 +1088,12 @@ def review_candidates(
     order_by_recent: bool = typer.Option(
         False, "--recent", help="Sort by first_seen_at DESC (latest first)"
     ),
+    property_type: str | None = typer.Option(
+        None,
+        "--property-type",
+        "-p",
+        help="Filter by property type: apartment, house, cottage, or garden",
+    ),
 ) -> None:
     """Print review candidates as JSON."""
 
@@ -1104,6 +1110,7 @@ def review_candidates(
                 max_age_days=max_age_days,
                 min_quick_score=min_quick_score,
                 order_by_recent=order_by_recent,
+                property_type=property_type,
             )
             return [
                 {
@@ -1114,6 +1121,11 @@ def review_candidates(
                     "price_per_m2": listing.price_per_m2,
                     "city": listing.city,
                     "district": listing.district,
+                    "property_category": (
+                        listing.property_category.value
+                        if listing.property_category
+                        else None
+                    ),
                     "ai_score": listing.ai_score,
                     "quick_score": (
                         listing.ai_analysis.get("score") if listing.ai_analysis else None
@@ -1227,6 +1239,12 @@ def review_prepare_batch(
     order_by_recent: bool = typer.Option(
         False, "--recent", help="Sort by first_seen_at DESC (latest first)"
     ),
+    property_type: str | None = typer.Option(
+        None,
+        "--property-type",
+        "-p",
+        help="Filter by property type: apartment, house, cottage, or garden",
+    ),
 ) -> None:
     """Prepare multiple listings for batch AI review.
 
@@ -1234,8 +1252,11 @@ def review_prepare_batch(
     writing JSON payloads to the cache directory.
 
     Examples:
-        # Prepare 20 listings
+        # Prepare 20 apartments
         uv run sussed review prepare-batch -n 20
+
+        # Prepare cottages only
+        uv run sussed review prepare-batch -n 20 -p cottage
 
         # Prepare with more photos per listing
         uv run sussed review prepare-batch -n 10 --image-limit 15
@@ -1262,6 +1283,7 @@ def review_prepare_batch(
                 max_age_days=max_age_days,
                 min_quick_score=min_quick_score,
                 order_by_recent=order_by_recent,
+                property_type=property_type,
             )
             if not candidates:
                 return results
@@ -1398,6 +1420,12 @@ def review_picks(
         "--max-age-days",
         help="Only include listings first seen within N days",
     ),
+    property_type: str | None = typer.Option(
+        None,
+        "--property-type",
+        "-p",
+        help="Filter by property type: apartment, house, cottage, or garden",
+    ),
     limit: int = typer.Option(20, "--limit", "-l", min=1, max=200, help="Max results"),
     format_output: str = typer.Option(
         "table", "--format", "-f", help="Output format: table or json"
@@ -1424,6 +1452,10 @@ def review_picks(
         # Only listings posted in the last week
         uv run sussed review picks --max-age-days 7
 
+        # Only cottages or gardens
+        uv run sussed review picks -p cottage
+        uv run sussed review picks -p garden
+
         # JSON output
         uv run sussed review picks -f json
     """
@@ -1439,6 +1471,7 @@ def review_picks(
                 district=district,
                 min_score=min_score,
                 max_age_days=max_age_days,
+                property_type=property_type,
                 limit=limit,
             )
             return [

@@ -142,6 +142,7 @@ def test_review_picks_json_outputs_ranked_results(
             "district": "Pole",
             "min_score": 700,
             "max_age_days": None,
+            "property_type": None,
             "limit": 5,
         }
     ]
