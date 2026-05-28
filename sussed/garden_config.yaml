@@ -9,14 +9,18 @@ name: Brno garden plot hunt
 description: Garden plot search in Brno suburbs under 1.5M CZK, prioritizing fenced plots with water and electricity.
 
 criteria:
-  # Brno-venkov maps to the Sreality district around Brno; use `brno` for city-only results.
+  # `city` here is the sreality scrape locality (brno-venkov = district id 73).
+  # Because it contains a hyphen, the hunt runner treats it as a region label
+  # and SKIPS the city DB filter so all scraped villages (Babice, Modřice,
+  # Tvarožná, etc.) match. To narrow to a specific town, replace with that
+  # town's exact city name, e.g. `city: Modřice`.
   city: brno-venkov
   property_type: garden
   listing_type: sale
-  max_price: 1500000
-  min_area_m2: 300.0 # For garden listings this is the advertised plot area.
+  max_price: 3500000
+  min_area_m2: 100.0 # For garden listings this is the advertised plot area.
   max_area_m2: 1500.0
-  min_photos: 3
+  min_photos: 1
   max_listing_age: 60
   exclude_description_keywords: "dražba, exekuce, pronájem pozemku"
 

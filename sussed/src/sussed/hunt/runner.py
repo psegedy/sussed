@@ -548,9 +548,15 @@ class AutonomousRunner:
                 Listing.property_category == property_category,
             ]
 
-            # City
+            # City. We hold the city condition separately so we can detect the
+            # common pitfall where `criteria.city` is a sreality region label
+            # (e.g. "brno-venkov", "jihomoravsky") that scoped the SCRAPE but
+            # doesn't appear in Listing.city (which stores actual town names
+            # like "Babice nad Svitavou"). If the city filter eliminates 100%
+            # of otherwise-matching listings, we fall back to no-city + warn.
+            city_condition = None
             if criteria.city:
-                conditions.append(Listing.city.ilike(f"%{criteria.city}%"))
+                city_condition = Listing.city.ilike(f"%{criteria.city}%")
 
             # Apartment layouts only apply to flats, not houses/cottages/gardens.
             if is_apartment_search and criteria.apartment_types:
@@ -626,18 +632,59 @@ class AutonomousRunner:
             if runner.skip_already_scored:
                 conditions.append(Listing.ai_analysis.is_(None))
 
-            logger.debug(f"Built {len(conditions)} query conditions")
+            logger.debug(f"Built {len(conditions)} non-city query conditions")
 
-            stmt = (
-                select(Listing)
-                .where(and_(*conditions))
-                .options(selectinload(Listing.price_history))
-                .limit(runner.max_listings_to_process)
-                .order_by(Listing.first_seen_at.desc())  # Newest first
-            )
+            base_where = and_(*conditions)
+            if city_condition is not None:
+                stmt = (
+                    select(Listing)
+                    .where(and_(base_where, city_condition))
+                    .options(selectinload(Listing.price_history))
+                    .limit(runner.max_listings_to_process)
+                    .order_by(Listing.first_seen_at.desc())  # Newest first
+                )
+            else:
+                stmt = (
+                    select(Listing)
+                    .where(base_where)
+                    .options(selectinload(Listing.price_history))
+                    .limit(runner.max_listings_to_process)
+                    .order_by(Listing.first_seen_at.desc())
+                )
 
             result = await session.execute(stmt)
             listings = result.scalars().all()
+
+            # Pitfall fallback: city scoped to zero but other criteria match.
+            # The user almost certainly set `city` to a sreality region label
+            # (brno-venkov, jihomoravsky) which can't match per-listing town
+            # names. Retry without city and warn loudly.
+            if not listings and city_condition is not None:
+                fallback_stmt = (
+                    select(Listing)
+                    .where(base_where)
+                    .options(selectinload(Listing.price_history))
+                    .limit(runner.max_listings_to_process)
+                    .order_by(Listing.first_seen_at.desc())
+                )
+                fallback_result = await session.execute(fallback_stmt)
+                fallback_listings = fallback_result.scalars().all()
+                if fallback_listings:
+                    logger.warning(
+                        f"city={criteria.city!r} matched 0 listings but "
+                        f"{len(fallback_listings)} listings match the other "
+                        "criteria. Falling back to no-city filter — your "
+                        "`city` value is probably a sreality region label "
+                        "(brno-venkov, jihomoravsky, etc.) that scoped the "
+                        "scrape but doesn't appear in stored city names. "
+                        "Set city to an actual town (e.g. 'Modřice') or "
+                        "leave it blank to silence this."
+                    )
+                    console.print(
+                        f"[yellow]⚠ city={criteria.city!r} matched nothing — "
+                        f"falling back to no-city filter ({len(fallback_listings)} matches)[/yellow]"
+                    )
+                    listings = fallback_listings
 
             logger.debug(f"Query returned {len(listings)} listings")
 
