@@ -635,15 +635,9 @@ def drops(
         posted = listing.first_seen_at.strftime("%Y-%m-%d") if listing.first_seen_at else "—"
         apt = listing.apartment_type or "-"
 
-        console.print(
-            f"[bold cyan]#{i}[/bold cyan] [bold]{apt}[/bold] · {location}"
-        )
-        console.print(
-            f"    [dim]Price:[/dim] {before_str} [bold]→[/bold] {after_str}  {delta_str}"
-        )
-        console.print(
-            f"    [dim]Drop: {drop_date} · Posted: {posted}[/dim]"
-        )
+        console.print(f"[bold cyan]#{i}[/bold cyan] [bold]{apt}[/bold] · {location}")
+        console.print(f"    [dim]Price:[/dim] {before_str} [bold]→[/bold] {after_str}  {delta_str}")
+        console.print(f"    [dim]Drop: {drop_date} · Posted: {posted}[/dim]")
         console.print(f"    [blue]{listing.url}[/blue]")
         console.print()
 
@@ -712,6 +706,99 @@ def version() -> None:
     from sussed import __version__
 
     console.print(f"[bold]sussed[/bold] v{__version__}")
+
+
+@app.command()
+def feed(
+    output: str = typer.Option(
+        "sussed-feed.html", "--output", "-o", help="Path to write the HTML feed"
+    ),
+    limit: int = typer.Option(50, "--limit", "-l", min=1, max=500, help="Max posts per tab"),
+    fresh_days: int = typer.Option(
+        7, "--fresh-days", min=1, help="Age window in days for the Fresh tab"
+    ),
+    min_score: int | None = typer.Option(
+        None, "--min-score", "-m", help="Minimum effective score for both tabs"
+    ),
+    district: str | None = typer.Option(
+        None, "--district", "-d", help="Filter by district name (fuzzy)"
+    ),
+    property_type: str | None = typer.Option(
+        None, "--property-type", "-p", help="apartment, house, cottage, or garden"
+    ),
+    all_picks: bool = typer.Option(
+        False,
+        "--all",
+        help="Include unreviewed listings in AI Picks (note: --min-score only "
+        "matches reviewed listings on that tab)",
+    ),
+    title: str = typer.Option("sussed · best picks", "--title", help="Page title"),
+    open_browser: bool = typer.Option(
+        False, "--open/--no-open", help="Open the generated file in a browser"
+    ),
+) -> None:
+    """Generate a self-contained Instagram-style HTML feed 📸
+
+    Reads the best listings straight from the database and writes ONE static HTML
+    file — no server, no API. Two tabs: AI-reviewed picks (ranked by review score)
+    and Fresh (recent listings ranked by effective score, i.e. AI score if reviewed
+    else the hunt quick-score). Filter/sort happen client-side in the browser.
+
+    Examples:
+        # Top picks + fresh from the last week
+        uv run sussed feed
+
+        # Cheap apartments in one district, open it right away
+        uv run sussed feed -p apartment -d "Královo Pole" --open
+
+        # Wider net: include unreviewed listings in AI Picks, last 30 days fresh
+        uv run sussed feed --all --fresh-days 30 -o /tmp/brno.html
+    """
+
+    async def _run() -> tuple[str, object]:
+        from sussed.db.connection import get_session
+        from sussed.feed.builder import build_feed_data
+        from sussed.feed.renderer import render_feed
+
+        async with get_session() as session:
+            feed_data, context = await build_feed_data(
+                session,
+                title=title,
+                limit=limit,
+                fresh_days=fresh_days,
+                district=district,
+                min_score=min_score,
+                property_type=property_type,
+                include_unreviewed_in_picks=all_picks,
+            )
+        return render_feed(feed_data, context), context
+
+    try:
+        html, context = asyncio.run(_run())
+    except ValueError as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    output_path = Path(output)
+    if output_path.parent and not output_path.parent.exists():
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")
+
+    ai_count = getattr(context, "ai_picks_count", 0)
+    fresh_count = getattr(context, "fresh_count", 0)
+    console.print(
+        f"\n[bold green]📸 Feed generated:[/bold green] {output_path} "
+        f"([cyan]{ai_count}[/cyan] AI picks · [cyan]{fresh_count}[/cyan] fresh)"
+    )
+    if ai_count == 0 and fresh_count == 0:
+        console.print(
+            "[yellow]No listings matched — try `sussed hunt` / `sussed review`, "
+            "or loosen filters (--all, --fresh-days, --min-score).[/yellow]"
+        )
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(output_path.resolve().as_uri())
 
 
 @app.command()
@@ -1124,9 +1211,7 @@ def review_candidates(
                     "city": listing.city,
                     "district": listing.district,
                     "property_category": (
-                        listing.property_category.value
-                        if listing.property_category
-                        else None
+                        listing.property_category.value if listing.property_category else None
                     ),
                     "ai_score": listing.ai_score,
                     "quick_score": (
@@ -1227,7 +1312,9 @@ def review_prepare(
 
 @review_app.command("prepare-batch")
 def review_prepare_batch(
-    count: int = typer.Option(10, "--count", "-n", min=1, max=100, help="Number of listings to prepare"),
+    count: int = typer.Option(
+        10, "--count", "-n", min=1, max=100, help="Number of listings to prepare"
+    ),
     image_limit: int = typer.Option(5, "--image-limit", min=0, max=20),
     cache_dir: str = typer.Option(".sussed/image-cache", "--cache-dir"),
     city: str | None = typer.Option(None, "--city", "-c"),
@@ -1310,13 +1397,15 @@ def review_prepare_batch(
                 )
                 Path(output_path).parent.mkdir(parents=True, exist_ok=True)
                 Path(output_path).write_text(content, encoding="utf-8")
-                results.append({
-                    "prefix": prefix,
-                    "listing_id": str(listing.id),
-                    "district": listing.district,
-                    "title": listing.title,
-                    "output": output_path,
-                })
+                results.append(
+                    {
+                        "prefix": prefix,
+                        "listing_id": str(listing.id),
+                        "district": listing.district,
+                        "title": listing.title,
+                        "output": output_path,
+                    }
+                )
 
         return results
 
@@ -1485,9 +1574,7 @@ def review_status() -> None:
 
 @review_app.command("picks")
 def review_picks(
-    all_listings: bool = typer.Option(
-        False, "--all", "-a", help="Include unreviewed listings too"
-    ),
+    all_listings: bool = typer.Option(False, "--all", "-a", help="Include unreviewed listings too"),
     district: str | None = typer.Option(
         None, "--district", "-d", help="Filter by district name (fuzzy)"
     ),
@@ -1574,8 +1661,12 @@ def review_picks(
                     "usable_area_m2": (
                         listing.ai_analysis.get("usable_area_m2") if listing.ai_analysis else None
                     ),
-                    "updated_at_source": listing.updated_at_source.isoformat() if listing.updated_at_source else None,
-                    "first_seen_at": listing.first_seen_at.isoformat() if listing.first_seen_at else None,
+                    "updated_at_source": listing.updated_at_source.isoformat()
+                    if listing.updated_at_source
+                    else None,
+                    "first_seen_at": listing.first_seen_at.isoformat()
+                    if listing.first_seen_at
+                    else None,
                     "url": listing.url,
                 }
                 for listing in listings
@@ -1633,7 +1724,9 @@ def review_picks(
     for row in results:
         score = row["ai_score"]
         emoji = score_emoji(score if isinstance(score, int) else None)
-        vibe = vibe_emoji(row.get("ai_vibe") if isinstance(row.get("ai_vibe"), str | None) else None)
+        vibe = vibe_emoji(
+            row.get("ai_vibe") if isinstance(row.get("ai_vibe"), str | None) else None
+        )
         price_fmt = f"{row['price_czk']:,}" if row["price_czk"] else "N/A"
 
         # If AI computed a corrected usable area, show TRUE price/m² and mark with "*"
