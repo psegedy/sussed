@@ -327,11 +327,13 @@ async def get_recent_scored_listings(
     from sqlalchemy.types import Integer
 
     # Effective score = ai_score ?? int(ai_analysis->>'score') with a safe cast:
-    # only digits (optionally signed) are cast, so junk JSON never raises.
+    # only 1-4 digit (optionally signed) values are cast — this rejects junk JSON
+    # AND over-range strings that would otherwise overflow ``CAST AS INTEGER`` and
+    # abort the whole query. Valid scores are -1, 0-1000, and 9999.
     score_text = Listing.ai_analysis.op("->>")("score")
     effective_score = coalesce(
         Listing.ai_score,
-        case((score_text.op("~")(r"^-?\d+$"), cast(score_text, Integer)), else_=None),
+        case((score_text.op("~")(r"^-?\d{1,4}$"), cast(score_text, Integer)), else_=None),
     )
 
     conditions = [Listing.status == ListingStatus.ACTIVE, effective_score.isnot(None)]

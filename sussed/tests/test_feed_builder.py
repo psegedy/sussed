@@ -142,6 +142,30 @@ def test_build_feed_post_marks_poa_listing() -> None:
     assert post.is_poa is True
 
 
+def test_build_feed_post_survives_malformed_analysis_scalars() -> None:
+    # Structured/junk values in scalar fields must be coerced to None instead of
+    # raising a pydantic ValidationError and aborting the whole feed.
+    listing = make_listing(
+        ai_reviewed_at=None,
+        ai_score=None,
+        ai_analysis={
+            "score": "not-a-number",
+            "recommendation": {"nested": "object"},
+            "parking_included": "yes-please",
+            "confidence": "high",
+            "highlights": "should-be-a-list",
+        },
+    )
+
+    post = build_feed_post(listing, [])
+
+    assert post.score is None
+    assert post.recommendation is None
+    assert post.parking_included is None
+    assert post.confidence is None
+    assert post.pros == []
+
+
 def test_build_feed_post_price_drop_history_has_signed_recent_decrease() -> None:
     now = utcnow_naive()
     listing = make_listing(price_czk=5_500_000, last_price_change_at=now)

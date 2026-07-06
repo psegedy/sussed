@@ -88,6 +88,18 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _safe_str(value: Any) -> str | None:
+    """Return a string for scalar JSON values, or None for structured/missing junk."""
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    return str(value)
+
+
+def _safe_bool(value: Any) -> bool | None:
+    """Return a bool only for genuine boolean values, else None."""
+    return value if isinstance(value, bool) else None
+
+
 def _summary_from_analysis(ai_analysis: dict[str, Any]) -> str | None:
     """Derive hunt-only summary from explicit summary or joined score reasons."""
     summary = ai_analysis.get("summary")
@@ -176,14 +188,14 @@ def build_feed_post(listing: Listing, price_history: list[dict[str, Any]]) -> Fe
         is_reviewed=is_reviewed,
         vibe=vibe,
         summary=summary,
-        recommendation=ai_analysis.get("recommendation"),
+        recommendation=_safe_str(ai_analysis.get("recommendation")),
         confidence=_safe_float(ai_analysis.get("confidence")),
         pros=_safe_list(ai_analysis.get("highlights")),
         cons_red=_safe_list(ai_analysis.get("red_flags")),
         cons_yellow=_safe_list(ai_analysis.get("yellow_flags")),
         hidden_costs=_safe_dict(ai_analysis.get("hidden_costs")),
         parking_price=_safe_int(ai_analysis.get("parking_price")),
-        parking_included=ai_analysis.get("parking_included"),
+        parking_included=_safe_bool(ai_analysis.get("parking_included")),
         usable_area_m2=_safe_float(ai_analysis.get("usable_area_m2")),
         agency_name=listing.agency_name,
     )
