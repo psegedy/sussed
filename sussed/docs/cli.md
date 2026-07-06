@@ -216,6 +216,58 @@ uv run sussed drops --days 7 --type 2+kk --city brno
 | `-t, --type` | Filter by apartment type | all |
 | `--to-poa` | Only listings that dropped to POA | false |
 
+## Instagram-style Feed 📸
+
+Generate a **single self-contained HTML file** of the best listings — a visual, shareable
+alternative to the terminal output. No server, no API: the data is read from the database
+and embedded in the page, and all filtering/sorting happens client-side in the browser.
+
+Two tabs:
+- **🏆 AI Picks** — AI-reviewed listings ranked by review score.
+- **🆕 Fresh** — recently-listed listings (within `--fresh-days`) ranked by *effective*
+  score: the AI review score when reviewed, otherwise the cheap `hunt` quick-score. This
+  surfaces strong-but-not-yet-reviewed listings too.
+
+Each listing renders as one Instagram-style post: photo carousel, price with price-change,
+listing dates, AI summary, pros/cons, and a link to the original sreality listing.
+
+```bash
+# Best picks + fresh from the last week → sussed-feed.html
+uv run sussed feed
+
+# Open it in the browser as soon as it's generated
+uv run sussed feed --open
+
+# Apartments in one district, custom output path
+uv run sussed feed -p apartment -d "Královo Pole" -o brno.html
+
+# Widen the net: include unreviewed listings in AI Picks, 30-day fresh window
+uv run sussed feed --all --fresh-days 30
+
+# Only high scorers, more posts per tab
+uv run sussed feed --min-score 700 --limit 100
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-o, --output` | Path to write the HTML file | sussed-feed.html |
+| `-l, --limit` | Max posts per tab | 50 |
+| `--fresh-days` | Age window (days) for the Fresh tab | 7 |
+| `-m, --min-score` | Minimum effective score (both tabs) | — |
+| `-d, --district` | Filter by district (fuzzy) | all |
+| `-p, --property-type` | apartment, house, cottage, or garden | all |
+| `--all` | Include unreviewed listings in AI Picks | false |
+| `--title` | Page title | sussed · best picks |
+| `--open/--no-open` | Open the file in a browser when done | no-open |
+
+> **Note:** on the AI Picks tab, `--min-score` only matches listings that have a full AI
+> review (unreviewed listings have no `ai_score`). The Fresh tab filters on the effective
+> score, so it includes quick-scored listings too.
+
+Open the generated file directly in any browser, or serve the folder with
+`python -m http.server` and browse to it. The page is fully offline-capable except for
+the listing photos (hotlinked from sreality's CDN) and web fonts.
+
 ## Getting Listing URLs
 
 ```bash
