@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
+import pytest
+
 from sussed.db.models import Listing, ListingType, PropertyCategory
 from sussed.models.sreality import (
     SrealityV1DetailResponse,
@@ -10,6 +13,7 @@ from sussed.models.sreality import (
     SrealityV1SearchResponse,
 )
 from sussed.scrapers.sreality import (
+    SrealityScraper,
     _build_listing_url,
     normalize_sreality_image_url,
     set_features_from_v1_detail,
@@ -152,3 +156,25 @@ def test_v1_image_url_normalizer_rejects_unexpected_sdn_subdomains() -> None:
     image_url = "//evil.com.sdn.cz/exploit.jpeg"
 
     assert normalize_sreality_image_url(image_url) is None
+
+
+def _client(status: int) -> httpx.AsyncClient:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={})
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.asyncio
+async def test_fetch_detail_raise_on_gone_raises_on_404() -> None:
+    scraper = SrealityScraper()
+    async with _client(404) as client:
+        with pytest.raises(httpx.HTTPStatusError) as exc:
+            await scraper.fetch_listing_details(client, 123, raise_on_gone=True)
+    assert exc.value.response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_fetch_detail_default_returns_none_on_404() -> None:
+    scraper = SrealityScraper()
+    async with _client(404) as client:
+        assert await scraper.fetch_listing_details(client, 123) is None

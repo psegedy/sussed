@@ -348,12 +348,18 @@ class SrealityScraper:
         self,
         client: httpx.AsyncClient,
         hash_id: int,
+        raise_on_gone: bool = False,
     ) -> SrealityV1Detail | None:
         """
         Fetch full details for a single listing.
 
+        Args:
+            client: Async HTTP client to use for the request.
+            hash_id: The sreality listing hash ID.
+            raise_on_gone: If True, raise on 404 in addition to the always-raised 410.
+
         Raises:
-            httpx.HTTPStatusError: If the API returns 410 Gone.
+            httpx.HTTPStatusError: If the API returns 410 Gone, or 404 when raise_on_gone=True.
         """
         await self._rate_limit_wait()
 
@@ -368,10 +374,11 @@ class SrealityScraper:
             response.raise_for_status()
             return SrealityV1DetailResponse.model_validate(response.json()).result
         except httpx.HTTPStatusError as err:
-            if err.response.status_code == 410:
-                logger.info(f"Listing {hash_id} is gone (410) - sold or removed")
+            status = err.response.status_code
+            if status == 410 or (raise_on_gone and status == 404):
+                logger.info(f"Listing {hash_id} is gone ({status}) - sold or removed")
                 raise
-            logger.error(f"HTTP error fetching listing {hash_id}: {err.response.status_code}")
+            logger.error(f"HTTP error fetching listing {hash_id}: {status}")
             return None
         except Exception as err:
             logger.error(f"Error fetching listing {hash_id}: {err}")
