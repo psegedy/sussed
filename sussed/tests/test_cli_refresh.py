@@ -30,3 +30,19 @@ def test_refresh_command_invokes_run_refresh() -> None:
     assert fake.await_count == 1
     assert fake.call_args.kwargs["dry_run"] is True
     assert fake.call_args.kwargs["limit"] == 5
+
+
+def test_refresh_rejects_non_sreality_source() -> None:
+    """refresh is Sreality-only; a non-sreality --source is rejected before any work."""
+    fake = AsyncMock()
+    with patch("sussed.scrapers.refresh.run_refresh", fake):
+        result = runner.invoke(app, ["refresh", "--source", "bezrealitky"])
+    assert result.exit_code == 2
+    assert "sreality" in result.output.lower()
+    assert fake.await_count == 0
+
+
+def test_refresh_rejects_negative_limit() -> None:
+    """--limit below 1 is rejected by the CLI constraint."""
+    result = runner.invoke(app, ["refresh", "--limit", "0"])
+    assert result.exit_code != 0

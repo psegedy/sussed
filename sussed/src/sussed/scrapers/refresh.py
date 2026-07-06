@@ -67,9 +67,20 @@ async def run_refresh(
         scraper = SrealityScraper()
         async with httpx.AsyncClient() as client:
             for listing in listings:
+                stats["checked"] += 1
+
+                try:
+                    hash_id = int(listing.external_id)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Skipping {listing.id}: non-integer external_id {listing.external_id!r}"
+                    )
+                    stats["errors"] += 1
+                    continue
+
                 try:
                     detail = await scraper.fetch_listing_details(
-                        client, int(listing.external_id), raise_on_gone=True
+                        client, hash_id, raise_on_gone=True
                     )
                 except httpx.HTTPStatusError as err:
                     if err.response.status_code in _GONE_STATUSES:
@@ -79,37 +90,52 @@ async def run_refresh(
                     else:
                         logger.warning(f"HTTP error refreshing {listing.external_id}: {err}")
                         stats["errors"] += 1
-                    stats["checked"] += 1
                     continue
                 except httpx.RequestError as err:
                     logger.warning(f"Network error refreshing {listing.external_id}: {err}")
                     stats["errors"] += 1
-                    stats["checked"] += 1
                     continue
 
-                stats["checked"] += 1
                 if detail is None:
                     stats["errors"] += 1
                     continue
 
-                new_price = detail.price_czk if detail.price_czk is not None else detail.price
-                new_ppm2 = int(detail.price_czk_m2) if detail.price_czk_m2 is not None else None
-                if new_price and await apply_price_change(
-                    session, listing, int(new_price), new_ppm2
-                ):
-                    stats["price_changes"] += 1
+                # Isolate each listing's DB mutations in a SAVEPOINT so one
+                # malformed detail (bad price/features) can neither abort the run
+                # nor leave a half-applied row in the batch commit.
+                try:
+                    async with session.begin_nested():
+                        # Mirror upsert's price normalization: missing/falsy -> 0.
+                        # 0 is a meaningful "dropped to POA" value and MUST persist.
+                        raw_price = (
+                            detail.price_czk if detail.price_czk is not None else detail.price
+                        )
+                        new_price = int(raw_price or 0)
+                        new_ppm2 = (
+                            int(detail.price_czk_m2) if detail.price_czk_m2 is not None else None
+                        )
+                        price_changed = await apply_price_change(
+                            session, listing, new_price, new_ppm2
+                        )
+                        if detail.advert_description:
+                            listing.description = detail.advert_description
+                        api_date = parse_v1_source_date(detail)
+                        if api_date and (
+                            listing.updated_at_source is None
+                            or api_date < listing.updated_at_source
+                        ):
+                            listing.updated_at_source = api_date
+                        set_features_from_v1_detail(listing, detail)
+                        listing.last_seen_at = now
+                        listing.updated_at = now
+                except Exception as exc:  # one bad row must not abort the whole run
+                    logger.warning(f"Failed to apply refresh for {listing.external_id}: {exc}")
+                    stats["errors"] += 1
+                    continue
 
-                if detail.advert_description:
-                    listing.description = detail.advert_description
-                api_date = parse_v1_source_date(detail)
-                if api_date and (
-                    listing.updated_at_source is None or api_date < listing.updated_at_source
-                ):
-                    listing.updated_at_source = api_date
-                set_features_from_v1_detail(listing, detail)
-                listing.last_seen_at = now
-                listing.updated_at = now
                 stats["updated"] += 1
+                if price_changed:
+                    stats["price_changes"] += 1
 
                 if stats["checked"] % 50 == 0 and not dry_run:
                     await session.commit()

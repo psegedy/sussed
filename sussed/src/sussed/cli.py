@@ -990,13 +990,19 @@ def enrich(
 def refresh(
     source: str = typer.Option("sreality", "--source", help="Source to refresh"),
     city: str | None = typer.Option(None, "--city", "-c", help="Filter by city"),
-    limit: int = typer.Option(100, "--limit", "-l", help="Max listings to re-check"),
+    limit: int = typer.Option(100, "--limit", "-l", min=1, help="Max listings to re-check"),
     stale_days: int | None = typer.Option(
-        None, "--stale-days", help="Only listings not seen in the last N days"
+        None, "--stale-days", min=0, help="Only listings not seen in the last N days"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", is_flag=True, help="Preview without saving"),
 ) -> None:
     """Re-check existing active listings: mark gone (404/410) as removed, refresh price/details 🔄"""
+    if source != "sreality":
+        console.print(
+            f"[red]refresh currently supports only --source sreality (got {source!r})[/red]"
+        )
+        raise typer.Exit(2)
+
     from sussed.scrapers.refresh import run_refresh
 
     async def _run() -> None:

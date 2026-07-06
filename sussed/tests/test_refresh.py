@@ -257,3 +257,58 @@ async def test_refresh_limit_selection(monkeypatch: pytest.MonkeyPatch) -> None:
 
     stats = await run_refresh(source=source, limit=2)
     assert stats["checked"] == 2
+
+
+@pytest.mark.asyncio
+async def test_refresh_price_drop_to_poa_zero_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A real price -> POA/0 must be persisted and recorded (not skipped as falsy)."""
+    await close_db()
+    await init_db()
+    source = "pytest-refresh-poa"
+    await _cleanup(source)
+
+    async with get_session() as session:
+        session.add(_seed(source, "1007", price_czk=5_000_000))
+
+    scraper = SimpleNamespace(
+        _rate_limit_wait=AsyncMock(),
+        fetch_listing_details=AsyncMock(return_value=_detail(price_czk=0.0, price_czk_m2=0)),
+    )
+    monkeypatch.setattr("sussed.scrapers.refresh.SrealityScraper", lambda: scraper)
+
+    stats = await run_refresh(source=source, limit=10)
+    assert stats["price_changes"] == 1
+    async with get_session() as session:
+        row = (
+            await session.execute(select(Listing).where(Listing.source == source))
+        ).scalar_one()
+        assert row.price_czk == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_skips_non_integer_external_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed external_id is counted as an error and skipped, but the run
+    continues and still processes the other (valid) listings."""
+    await close_db()
+    await init_db()
+    source = "pytest-refresh-badid"
+    await _cleanup(source)
+
+    async with get_session() as session:
+        session.add_all([
+            _seed(source, "not-an-int", last_seen_at=datetime(2026, 1, 1, 0, 0)),
+            _seed(source, "3001", last_seen_at=datetime(2026, 1, 2, 0, 0)),
+        ])
+
+    scraper = SimpleNamespace(
+        _rate_limit_wait=AsyncMock(),
+        fetch_listing_details=AsyncMock(return_value=_detail()),
+    )
+    monkeypatch.setattr("sussed.scrapers.refresh.SrealityScraper", lambda: scraper)
+
+    stats = await run_refresh(source=source, limit=10)
+    assert stats["errors"] == 1
+    assert stats["updated"] == 1
+    assert stats["checked"] == 2
+    # The bad-id listing was never fetched; only the valid one.
+    assert scraper.fetch_listing_details.await_count == 1
