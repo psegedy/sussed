@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 from loguru import logger
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 
 from sussed.db.models import Listing, ListingReview, ListingStatus, PriceHistory, VibeCheck
 from sussed.review.models import PreparedListingReview, ReviewResultInput, ReviewVibe
@@ -164,8 +164,8 @@ async def get_review_candidates(
 ) -> list[Listing]:
     """Get active listings ordered by review priority.
 
-    If ``max_age_days`` is set, only include listings whose ``first_seen_at`` is within
-    that many days.
+    If ``max_age_days`` is set, only include listings whose ``updated_at_source``
+    (or ``first_seen_at`` as fallback) is within that many days.
 
     If ``min_quick_score`` is set, only include listings whose hunt quick score
     (``ai_analysis->>'score'``) is at least that value.
@@ -193,16 +193,20 @@ async def get_review_candidates(
             conditions.append(Listing.property_category == cat)
         except ValueError as exc:
             valid = ", ".join(c.value for c in PropertyCategory)
-            raise ValueError(
-                f"Unknown property_type {property_type!r}. Valid: {valid}"
-            ) from exc
+            raise ValueError(f"Unknown property_type {property_type!r}. Valid: {valid}") from exc
     if max_age_days is not None:
         freshness_cutoff = _utcnow() - timedelta(days=max_age_days)
-        conditions.append(Listing.first_seen_at >= freshness_cutoff)
-    if min_quick_score is not None:
+        # Prefer updated_at_source (listing date on portal) over first_seen_at (scrape date)
         conditions.append(
-            cast(Listing.ai_analysis.op("->>")("score"), Integer) >= min_quick_score
+            or_(
+                Listing.updated_at_source >= freshness_cutoff,
+                and_(
+                    Listing.updated_at_source.is_(None), Listing.first_seen_at >= freshness_cutoff
+                ),
+            )
         )
+    if min_quick_score is not None:
+        conditions.append(cast(Listing.ai_analysis.op("->>")("score"), Integer) >= min_quick_score)
 
     stale_cutoff = _utcnow() - timedelta(days=stale_after_days)
     conditions.append(
@@ -253,7 +257,13 @@ async def get_reviewed_picks(
 
     if max_age_days is not None:
         cutoff = _utcnow() - timedelta(days=max_age_days)
-        conditions.append(Listing.first_seen_at >= cutoff)
+        # Prefer updated_at_source (listing date on portal) over first_seen_at (scrape date)
+        conditions.append(
+            or_(
+                Listing.updated_at_source >= cutoff,
+                and_(Listing.updated_at_source.is_(None), Listing.first_seen_at >= cutoff),
+            )
+        )
 
     if property_type:
         from sussed.db.models import PropertyCategory
@@ -263,9 +273,7 @@ async def get_reviewed_picks(
             conditions.append(Listing.property_category == cat)
         except ValueError as exc:
             valid = ", ".join(c.value for c in PropertyCategory)
-            raise ValueError(
-                f"Unknown property_type {property_type!r}. Valid: {valid}"
-            ) from exc
+            raise ValueError(f"Unknown property_type {property_type!r}. Valid: {valid}") from exc
 
     stmt = select(Listing).where(*conditions)
     stmt = stmt.order_by(

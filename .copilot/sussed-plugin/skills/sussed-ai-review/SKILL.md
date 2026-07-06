@@ -1,24 +1,28 @@
 ---
 name: sussed-ai-review
-description: Use when reviewing, scoring, re-scoring, vibe-checking, or analyzing saved sussed real-estate listings with Copilot CLI or Claude Code
+description: Use when reviewing, scoring, re-scoring, vibe-checking, or analyzing saved sussed APARTMENT listings with Copilot CLI or Claude Code. ONLY for apartments — use sussed-cottage-review for cottages and sussed-garden-review for gardens/land plots.
 ---
 
-# Sussed AI Listing Review
+# Sussed AI Apartment Review
 
 ## Overview
 
-Review saved `sussed` listings with the coding agent as the reasoning and vision reviewer, and the `sussed` CLI as the only read/prepare/validate/save path. `sussed enrich` pre-warms the per-listing photo cache; `sussed review prepare` only reads from that cache and never downloads anything itself.
+Review saved `sussed` **apartment** listings with the coding agent as the reasoning and vision reviewer, and the `sussed` CLI as the only read/prepare/validate/save path. `sussed enrich` pre-warms the per-listing photo cache; `sussed review prepare` only reads from that cache and never downloads anything itself.
 
 **Core principle:** reason from prepared evidence only. Do not invent missing facts, skip available photos, or persist reviews outside `sussed review save`.
+
+**This skill is ONLY for apartments.** Cottages use `sussed-cottage-review`. Gardens and land plots use `sussed-garden-review`. If a prepared payload has `property_category` other than `"apartment"`, skip it and tell the user to use the correct skill.
 
 ## When to Use
 
 Use when the user asks to:
-- Review, score, re-score, vibe-check, or analyze saved `sussed` listings.
-- Compare listing text, structured details, photos, hidden costs, or inflated area claims.
-- Save an AI review result back to the `sussed` database.
+- Review, score, re-score, vibe-check, or analyze saved `sussed` **apartment** listings.
+- Compare apartment listing text, structured details, photos, hidden costs, or inflated area claims.
+- Save an AI review result for an apartment back to the `sussed` database.
 
-Do not use for general code review, scraper debugging, README edits, or implementing new features.
+**Do NOT use for:**
+- Cottages, gardens, land plots, houses, or any non-apartment property type — use the dedicated skill for that property type instead.
+- General code review, scraper debugging, README edits, or implementing new features.
 
 ## Detailed references
 
@@ -80,6 +84,7 @@ Heavy reference content lives in sibling files. Load them on demand:
 ## Batch Reviews
 
 - Use `prepare-batch` to fetch many candidates in one call, then review them in parallel.
+- **Always pass `-p apartment`** to `prepare-batch` to ensure only apartments are queued for this skill. Without it, gardens and cottages may sneak in.
 - Dispatch sub-agents in **batches of 5–7 listings**; keep to **3–4 parallel agents** to avoid stalling and rate-limit failures.
 - For metadata-only listings (empty descriptions, no images, null features), score quickly from title/price/area/district/layout with yellow flags. A single agent can rip through 20+ via `scripts/make_review.py` + `scripts/batch_save.sh`.
 
@@ -110,5 +115,7 @@ uv run sussed review picks -f json               # JSON output
 | Using full UUID with dashes as prefix | Use first 8 hex chars only, e.g. `5627933d` not `5627933d-ef8c-...`. |
 | Putting strings in `hidden_costs` | Values must be `int \| null`. Use `{"parking": 2000}` not `{"parking": "2000 CZK"}`. |
 | Launching 10+ parallel review agents | Keep to 3–4 parallel agents with 5–7 listings each. |
+| Reviewing non-apartment listings (gardens, cottages, houses) | This skill is apartments only. Check `property_category` in the prepared JSON — skip if not `"apartment"`. Use `sussed-cottage-review` or `sussed-garden-review` instead. |
+| Running `prepare-batch` without `-p apartment` | Always pass `-p apartment` to avoid gardens/cottages leaking into the batch. |
 | Trusting listing descriptions at face value | Always verify claims against photos. "Designer" can mean garish. Score what you see, not what they say. |
 | Using `../search_config.yaml` for hunt config | The config is at `search_config.yaml` inside the `sussed/` project directory. |

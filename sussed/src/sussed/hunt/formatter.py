@@ -131,6 +131,43 @@ def prepare_output(config: SearchConfig, listings: list[dict[str, Any]]) -> list
     """Sort and filter based on output config."""
     output = config.output
 
+    # Filter by listing age (based on listed_at / updated_at_source, NOT first_seen_at)
+    # This ensures output only shows listings within the requested age window
+    if config.criteria.max_listing_age:
+        from datetime import timedelta
+
+        age_days_map = {"day": 2, "week": 8, "month": 31}
+        age_val = config.criteria.max_listing_age
+        if isinstance(age_val, int) or (isinstance(age_val, str) and age_val.isdigit()):
+            days = int(age_val)
+        else:
+            days = age_days_map.get(age_val, 31)
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        filtered = []
+        for item in listings:
+            listed_at = item.get("listed_at")
+            if listed_at is None:
+                # No listed_at date — fall back to first_seen_at
+                listed_at = item.get("first_seen_at")
+            if listed_at is None:
+                filtered.append(item)  # keep if we have no date info at all
+                continue
+            if isinstance(listed_at, str):
+                try:
+                    listed_at = datetime.fromisoformat(listed_at)
+                except ValueError:
+                    filtered.append(item)
+                    continue
+            if listed_at >= cutoff:
+                filtered.append(item)
+
+        logger.debug(
+            f"Age output filter: {len(listings)} → {len(filtered)} "
+            f"(max {days} days, cutoff {cutoff.date()})"
+        )
+        listings = filtered
+
     # Filter by mode
     if output.mode == OutputMode.GEMS:
         listings = [item for item in listings if item.get("score", 0) >= 900]
@@ -311,15 +348,11 @@ def display_table(
                     )
                 elif not current_is_poa and initial_is_poa:
                     # Was POA, now has a real price
-                    console.print(
-                        f"   📢 [cyan]Price revealed: {current:,} Kč (was POA)[/cyan]"
-                    )
+                    console.print(f"   📢 [cyan]Price revealed: {current:,} Kč (was POA)[/cyan]")
 
                 # Show count of changes when more than one
                 if len(price_changes) > 1:
-                    console.print(
-                        f"   [dim]({len(price_changes)} price changes recorded)[/dim]"
-                    )
+                    console.print(f"   [dim]({len(price_changes)} price changes recorded)[/dim]")
 
             # Listing dates — sreality only exposes "Aktualizace" (modified),
             # not "Vloženo" (created). Show approximate listed date from the
