@@ -322,7 +322,24 @@ select { padding: 9px 30px 9px 12px; }
 .media-chips { position: absolute; left: 12px; top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 
 .details { padding: 18px; }
-.price-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin-bottom: 10px; }
+.price-block { margin-bottom: 10px; }
+.price-was {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(1rem, 2.6vw, 1.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--muted) 65%, transparent);
+  text-decoration-thickness: 2px;
+}
+.price-was__unit { font-size: 0.72em; font-weight: 800; }
+.price-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
 .price {
   font-family: var(--display);
   font-weight: 760;
