@@ -37,6 +37,16 @@ When the total exceeds the threshold, look in both `description` and `detail_ite
 
 `detail_items` entries look like `{"name": "Terasa", "value": "32", "type": "area"}`.
 
+## Step 1b — Use the floor-plan diagram when you have one
+
+If a floor-plan image is available (often the **last** photo in `image_paths`), read the labeled room areas straight off it — this is the most reliable usable-area source, better than a single advertised number:
+
+- **Sum the indoor rooms** (obývací pokoj / kuchyně, ložnice, pokoj, předsíň, koupelna, WC, komora, technická místnost) → that sum is `usable_area_m2`.
+- **Exclude** lodžie / balkon / terasa / sklep / garáž / parkovací stání.
+- If the summed indoor total differs from the advertised `Podlahová plocha` / `Užitná plocha` by more than ~3 m², note the discrepancy in `yellow_flags` and trust the diagram sum.
+
+Worked (Sadová 2+kk, 9,490,000 Kč, advertised 70 m²): předsíň 10 + WC 2.5 + koupelna 5.1 + obývací 33.9 + ložnice 13.9 = **65.4 m² usable** (lodžie 14.4 excluded). True price/m² = 9,490,000 / 65.4 = **145,100 Kč** vs advertised 135,600 Kč — a ~7% correction: a yellow flag, not a red one, and easily offset when parking is included in the price.
+
 ## Step 2 — Compute `usable_area_m2`
 
 Priority order:
