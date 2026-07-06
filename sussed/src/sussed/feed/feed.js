@@ -9,7 +9,7 @@
     sort: "score",
     listingType: "all",
     propertyType: "all",
-    freshWindow: "day",
+    freshWindow: "all",
   };
 
   const feed = document.getElementById("feed");
@@ -23,6 +23,15 @@
 
   function text(value, fallback = "") {
     return value === null || value === undefined || value === "" ? fallback : String(value);
+  }
+
+  function safeHttpUrl(value) {
+    try {
+      const url = new URL(String(value));
+      return url.protocol === "http:" || url.protocol === "https:" ? url.href : "#";
+    } catch {
+      return "#";
+    }
   }
 
   function create(tag, className, content) {
@@ -96,16 +105,21 @@
     return state.listingType === "all" || normalize(post.listing_type) === state.listingType;
   }
 
+  function freshDate(post) {
+    // Mirror the backend Fresh window: portal date, falling back to first-seen.
+    return post.source_updated_at || post.first_seen_at || null;
+  }
+
   function freshMatches(post) {
-    if (state.tab !== "fresh") return true;
-    const rawDate = post.first_seen_at;
+    if (state.tab !== "fresh" || state.freshWindow === "all") return true;
+    const rawDate = freshDate(post);
     if (!rawDate) return false;
     const generated = context.generated_at ? new Date(context.generated_at) : new Date();
-    const seen = new Date(rawDate);
-    const requestedDays = state.freshWindow === "day" ? 2 : 8;
-    const maxDays = Number(context.fresh_days || requestedDays);
-    const days = Math.min(requestedDays, Number.isFinite(maxDays) && maxDays > 0 ? maxDays : requestedDays);
-    return generated.getTime() - seen.getTime() <= days * 24 * 60 * 60 * 1000;
+    const requestedDays = state.freshWindow === "day" ? 2 : 7;
+    const maxDays = Number(context.fresh_days);
+    const days =
+      Number.isFinite(maxDays) && maxDays > 0 ? Math.min(requestedDays, maxDays) : requestedDays;
+    return generated.getTime() - new Date(rawDate).getTime() <= days * 24 * 60 * 60 * 1000;
   }
 
   function sortPosts(posts) {
@@ -150,7 +164,7 @@
         img.loading = "lazy";
         img.decoding = "async";
         img.alt = `${text(post.title, "Listing image")} · ${index + 1}`;
-        img.src = url;
+        img.src = safeHttpUrl(url);
         img.onerror = () => slide.replaceChildren(makePlaceholder());
         slide.appendChild(img);
       } else {
@@ -277,7 +291,7 @@
     details.appendChild(renderStats(post));
 
     const title = create("a", "title-link", text(post.title, "Bez názvu"));
-    title.href = post.url;
+    title.href = safeHttpUrl(post.url);
     title.target = "_blank";
     title.rel = "noopener noreferrer";
     details.appendChild(title);
@@ -289,7 +303,7 @@
     if (costs) details.appendChild(costs);
 
     const cta = create("a", "cta", "Zobrazit na sreality →");
-    cta.href = post.url;
+    cta.href = safeHttpUrl(post.url);
     cta.target = "_blank";
     cta.rel = "noopener noreferrer";
     details.appendChild(cta);

@@ -779,10 +779,14 @@ def feed(
         console.print(f"[red]Error: {exc}[/red]")
         raise typer.Exit(1) from exc
 
-    output_path = Path(output)
-    if output_path.parent and not output_path.parent.exists():
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
+    output_path = Path(output).expanduser()
+    try:
+        if output_path.parent and not output_path.parent.exists():
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(html, encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[red]Could not write {output_path}: {exc}[/red]")
+        raise typer.Exit(1) from exc
 
     ai_count = getattr(context, "ai_picks_count", 0)
     fresh_count = getattr(context, "fresh_count", 0)
