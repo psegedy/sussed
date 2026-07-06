@@ -268,3 +268,76 @@ async def test_check_listing_resolves_duplicate_chain_root() -> None:
     assert match is not None
     assert listing.duplicate_of_id == root.id
     assert listing.duplicate_of_id != candidate.id
+
+
+@pytest.mark.asyncio
+async def test_find_candidates_older_than_filters_before_cap() -> None:
+    """Regression: older-than filter must happen BEFORE the cap, not after.
+
+    Without the fix, two newer listings with distance=0 fill max_candidates=1
+    and the true older predecessor (slightly off GPS → distance > 0) is dropped.
+    With the fix, newer listings are filtered out first, so the older one survives.
+    """
+    source = "pytest-dedup-older-than-cap"
+    await _clean_source(source)
+
+    # Reference listing
+    ref_time = datetime(2026, 1, 15, 12, 0, 0)
+    ref_lat = Decimal("49.2000000")
+    ref_lon = Decimal("16.6000000")
+
+    # Older predecessor: ~14 m off — still within gps_veto_m=150 m
+    old_time = datetime(2025, 6, 1, 12, 0, 0)
+    old_lat = Decimal("49.2001000")
+    old_lon = Decimal("16.6001000")
+
+    # Newer listings: exact same GPS → distance=0, so they rank ABOVE the older one
+    newer_time_1 = datetime(2026, 1, 20, 12, 0, 0)
+    newer_time_2 = datetime(2026, 1, 22, 12, 0, 0)
+
+    async with get_session() as session:
+        reference = _listing(
+            source=source,
+            external_id="700",
+            latitude=ref_lat,
+            longitude=ref_lon,
+            first_seen_at=ref_time,
+        )
+        older_predecessor = _listing(
+            source=source,
+            external_id="701",
+            latitude=old_lat,
+            longitude=old_lon,
+            first_seen_at=old_time,
+            status=ListingStatus.REMOVED,
+        )
+        newer_1 = _listing(
+            source=source,
+            external_id="702",
+            latitude=ref_lat,
+            longitude=ref_lon,
+            first_seen_at=newer_time_1,
+        )
+        newer_2 = _listing(
+            source=source,
+            external_id="703",
+            latitude=ref_lat,
+            longitude=ref_lon,
+            first_seen_at=newer_time_2,
+        )
+        session.add_all([reference, older_predecessor, newer_1, newer_2])
+        await session.commit()
+
+        # With older_than: cap=1 must return the older predecessor, not a newer one
+        filtered = await find_candidates(session, reference, max_candidates=1, older_than=reference)
+        assert len(filtered) == 1, "expected exactly one older candidate after cap"
+        assert filtered[0].external_id == "701", (
+            f"expected older predecessor '701', got '{filtered[0].external_id}'"
+        )
+
+        # Without older_than: cap=1 returns a newer one (distance=0 ranks first)
+        unfiltered = await find_candidates(session, reference, max_candidates=1, older_than=None)
+        assert len(unfiltered) == 1
+        assert unfiltered[0].external_id in {"702", "703"}, (
+            "without older_than filter a distance=0 newer listing should win"
+        )
