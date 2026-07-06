@@ -4,9 +4,13 @@ Main scraper orchestration 🎯
 Ties together the scraper, database, and logging.
 """
 
+from __future__ import annotations
+
 import asyncio
 from datetime import datetime
+from typing import TYPE_CHECKING
 
+import httpx
 from loguru import logger
 
 from sussed.db.connection import get_session, init_db
@@ -15,7 +19,13 @@ from sussed.db.operations import (
     update_scrape_run,
     upsert_listing_from_sreality,
 )
+from sussed.dedup.detector import check_listing
 from sussed.scrapers.sreality import SrealityScraper
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from sussed.db.models import Listing
 
 
 async def run_scrape(
@@ -52,6 +62,7 @@ async def run_scrape(
         "listings_updated": 0,
         "price_changes": 0,
         "errors": 0,
+        "duplicates_flagged": 0,
     }
 
     scraper = SrealityScraper()
@@ -62,36 +73,38 @@ async def run_scrape(
         await session.commit()
 
         try:
-            async for estate in scraper.scrape(
-                city=city,
-                listing_type=listing_type,
-                property_type=property_type,
-                max_pages=max_pages,
-                max_age=max_age,
-            ):
-                try:
-                    _listing, is_new, price_changed = await upsert_listing_from_sreality(
-                        session,
-                        estate,
-                        city_override=city.title(),  # Normalize city name
-                    )
+            async with httpx.AsyncClient() as dedup_client:
+                async for estate in scraper.scrape(
+                    city=city,
+                    listing_type=listing_type,
+                    property_type=property_type,
+                    max_pages=max_pages,
+                    max_age=max_age,
+                ):
+                    try:
+                        listing, is_new, price_changed = await upsert_listing_from_sreality(
+                            session,
+                            estate,
+                            city_override=city.title(),  # Normalize city name
+                        )
 
-                    stats["listings_found"] += 1
-                    if is_new:
-                        stats["listings_new"] += 1
-                    else:
-                        stats["listings_updated"] += 1
-                    if price_changed:
-                        stats["price_changes"] += 1
+                        stats["listings_found"] += 1
+                        if is_new:
+                            stats["listings_new"] += 1
+                            await _dedup_new_listing(session, listing, scraper, dedup_client, stats)
+                        else:
+                            stats["listings_updated"] += 1
+                        if price_changed:
+                            stats["price_changes"] += 1
 
-                    # Commit every 50 listings to avoid huge transactions
-                    if stats["listings_found"] % 50 == 0:
-                        await session.commit()
-                        logger.info(f"Progress: {stats['listings_found']} listings processed")
+                        # Commit every 50 listings to avoid huge transactions
+                        if stats["listings_found"] % 50 == 0:
+                            await session.commit()
+                            logger.info(f"Progress: {stats['listings_found']} listings processed")
 
-                except Exception as e:
-                    logger.error(f"Error processing listing {estate.hash_id}: {e}")
-                    stats["errors"] += 1
+                    except Exception as e:
+                        logger.error(f"Error processing listing {estate.hash_id}: {e}")
+                        stats["errors"] += 1
 
             # Final commit
             await session.commit()
@@ -123,10 +136,47 @@ async def run_scrape(
         f"   New: {stats['listings_new']}\n"
         f"   Updated: {stats['listings_updated']}\n"
         f"   Price changes: {stats['price_changes']}\n"
+        f"   Duplicates flagged: {stats['duplicates_flagged']}\n"
         f"   Errors: {stats['errors']}"
     )
 
     return stats
+
+
+async def _dedup_new_listing(
+    session: AsyncSession,
+    listing: Listing,
+    scraper: SrealityScraper,
+    client: httpx.AsyncClient,
+    stats: dict[str, int],
+) -> None:
+    """Run non-destructive duplicate detection for a newly-ingested listing.
+
+    Uses a SAVEPOINT so any dedup failure (network, DB) rolls back ONLY the
+    dedup work and never poisons the surrounding scrape transaction.
+
+    Args:
+        session: The active database session.
+        listing: The newly-inserted listing to check.
+        scraper: SrealityScraper instance (rate limiter is shared).
+        client: Shared httpx client for detail fetches.
+        stats: Mutable stats dict; ``duplicates_flagged`` is incremented on match.
+    """
+    try:
+        # CRITICAL: flush the new listing INSERT into the OUTER transaction
+        # BEFORE opening the savepoint. check_listing triggers autoflush when
+        # it queries candidates; if the new row were first flushed *inside* the
+        # savepoint, a dedup error would roll the INSERT back and we'd lose the
+        # scraped listing. Flushing here keeps the INSERT in the main txn.
+        await session.flush()
+        async with session.begin_nested():
+            match = await check_listing(
+                session, listing, scraper=scraper, client=client, allow_fetch=True
+            )
+        if match is not None:
+            stats["duplicates_flagged"] += 1
+    except Exception as exc:  # dedup must never abort a scrape
+        logger.warning(f"Dedup check failed for listing {listing.external_id}: {exc}")
 
 
 def scrape_sync(
