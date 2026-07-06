@@ -104,6 +104,18 @@ class Listing(SQLModel, table=True):
     # NOT the original publish date. Sreality doesn't expose "Vloženo" via API.
     # We store the oldest "Aktualizace" we've seen as a rough lower bound.
     updated_at_source: datetime | None = Field(default=None)
+    # Relisting / duplicate detection (non-destructive, advisory metadata only).
+    # The NEWER listing points at the OLDER twin it duplicates via
+    # duplicate_of_id (resolved to the chain root). Nothing is merged or hidden.
+    duplicate_of_id: uuid.UUID | None = Field(default=None, index=True)
+    duplicate_confidence: Decimal | None = Field(
+        default=None, ge=0, le=1, max_digits=4, decimal_places=3
+    )
+    duplicate_status: str | None = Field(default=None, index=True)
+    duplicate_reasons: list[str] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
+    duplicate_checked_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     price_history: list[PriceHistory] = Relationship(back_populates="listing")
