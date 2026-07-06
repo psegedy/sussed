@@ -51,7 +51,20 @@ Common traits across winners: 2+kk or 3+kk, modern/reconstructed, large windows,
 
 ## Scoring posture
 
-Score higher when a listing matches multiple preferences. A listing hitting all five wish-list items in a preferred district deserves a **750+** score. Conversely, a dark unrenovated flat with no outdoor space and paid parking should score lower even if the price/m² looks fair.
+**Be generous with genuinely good apartments — do not default to mid.** A solid, move-in-ready flat in or near a preferred district belongs in **valid (600–799)**; a strong one belongs in **peak (800+)**. Reserve mid/meh for flats with real drawbacks (no parking when required, dark/unrenovated, wrong/avoid district, awkward layout, non-residential classification).
+
+- A listing hitting **4–5 wish-list items in a preferred district is peak (800–900)**, not merely valid. A new-build or top-tier reconstruction in Sadová / Žabovřesky / Královo Pole / Černá Pole / Veveří / Staré Brno with parking, outdoor space and big windows should land **820–900**.
+- Hitting ~3–4 wants in a preferred or adjacent district → solid **valid (680–790)**.
+- Don't over-dock for a fair-but-high price/m² or a small area discrepancy — **location + build quality + parking-included** matter more than a clean headline /m².
+- Conversely, a dark unrenovated flat with no outdoor space and paid-extra parking scores lower even if the price/m² looks fair.
+
+### Parking is worth real money — weight it
+
+A parking spot in Brno typically costs **~600,000–1,000,000 CZK**. Treat it as a first-class value signal:
+
+- **Parking included in the price** → significant plus (you're effectively getting a 600k–1M asset baked in). Do NOT knock the price/m² for it — a 145k/m² flat with parking included easily beats a 130k/m² flat where parking is +900k extra.
+- **Parking paid extra** → add it to the true total cost and true price/m² (see area-recalc.md) before scoring; a 500k+ surcharge is a real drag on value.
+- **No parking at all** when the buyer requires it → a genuine drawback; cap the score accordingly.
 
 ## Scoring scale
 
