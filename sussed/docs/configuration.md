@@ -1,3 +1,17 @@
+---
+title: sussed configuration reference
+kind: config-reference
+canonical: true
+env_source: src/sussed/config.py
+schema_source: src/sussed/hunt/config.py
+generate_example: uv run sussed hunt --generate-config
+sections: [env, top-level, criteria, scoring, output, runner]
+related: [docs/cli.md]
+example_configs: [search_config.yaml, simple_config.yaml, cottage_config.yaml, garden_config.yaml]
+keywords: [env, DATABASE_URL, hunt, yaml, criteria, scoring, output, runner]
+updated: 2026-07-06
+---
+
 # 🛠 Configuration Reference
 
 ## Environment Variables

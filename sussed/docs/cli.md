@@ -1,8 +1,59 @@
+---
+title: sussed CLI reference
+kind: cli-reference
+canonical: true
+project_dir: sussed/
+run_prefix: uv run sussed
+source: src/sussed/cli.py
+commands: [scrape, listings, hunt, drops, enrich, review, feed, url, db, version]
+related: [docs/configuration.md]
+keywords: [brno, sreality, scrape, score, hunt, review, feed, html, price-drop]
+updated: 2026-07-06
+---
+
 # 👨‍🍳 sussed CLI reference
 
 All `sussed` commands run from inside the `sussed/` Python project directory, prefixed with `uv run`.
 
 > **Quick discovery:** `uv run sussed --help` lists every command. `uv run sussed <command> --help` shows flags for any single command.
+
+## Command index
+
+Machine-readable map of intent → command → section anchor. `--help` is authoritative for exact flags.
+
+```yaml
+commands:
+  scrape:   { purpose: "Fetch listings from sreality into the DB", anchor: "#scraping-listings" }
+  listings: { purpose: "View stored listings (table/markdown/json)", anchor: "#viewing-listings" }
+  hunt:     { purpose: "Score + rank listings from a YAML config", anchor: "#autonomous-hunt-mode-" }
+  drops:    { purpose: "List price decreases (incl. dropped-to-POA)", anchor: "#price-drops-" }
+  enrich:   { purpose: "Fetch descriptions + pre-warm photo cache", anchor: "#ai-reviewing-saved-listings" }
+  review:   { purpose: "AI review workflow (candidates/prepare/validate/save/picks/status)", anchor: "#ai-reviewing-saved-listings" }
+  feed:     { purpose: "Generate a static Instagram-style HTML feed of best listings", anchor: "#instagram-style-feed-", writes: sussed-feed.html }
+  url:      { purpose: "Resolve a listing URL by (partial) id", anchor: "#getting-listing-urls" }
+  db:       { purpose: "init | status for the PostgreSQL database", anchor: "#database-management" }
+  version:  { purpose: "Show version", anchor: "#other-commands" }
+```
+
+## Conventions & invariants
+
+Stable facts an agent needs when reasoning about output. See [configuration.md](configuration.md) for the hunt YAML schema.
+
+```yaml
+run_context: "All commands run from sussed/, prefixed with `uv run` (e.g. `uv run sussed feed`)."
+property_types: [apartment, house, cottage, garden]
+score_scale:
+  "-1": "auto-reject / sus"
+  "0-1000": "normal, higher = better"
+  "9999": "unicorn / absolute gem"
+effective_score: "feed Fresh tab ranks by ai_score if AI-reviewed, else the hunt quick-score in ai_analysis.score."
+min_score_caveat: "On `review picks` and the `feed` AI Picks tab, --min-score matches only AI-reviewed listings (ai_score). The feed Fresh tab filters on effective score."
+poa: "Price-on-request = stored price <= 10 CZK (often 1 Kč); excluded from cheapest-price sorts."
+dates:
+  first_seen_at: "When the scraper first saw the listing."
+  updated_at_source: "sreality 'Aktualizace' (last-modified) — NOT the original publish date, which the API does not expose."
+  age_filters: "Use updated_at_source (portal date) with first_seen_at as fallback."
+```
 
 ## Scraping Listings
 
