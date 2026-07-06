@@ -1865,6 +1865,7 @@ def list_duplicates(
         help="Filter by duplicate_status: duplicate or suspected",
     ),
     city: str | None = typer.Option(None, "--city", "-c", help="Filter by city (case-insensitive)"),
+    source: str | None = typer.Option(None, "--source", help="Filter by listing source"),
     limit: int = typer.Option(50, "--limit", "-l", help="Max results to show"),
 ) -> None:
     """Show flagged duplicate / relisting pairs 🔍
@@ -1890,6 +1891,8 @@ def list_duplicates(
                 stmt = stmt.where(Listing.duplicate_status == status)
             if city:
                 stmt = stmt.where(Listing.city.ilike(f"%{city}%"))
+            if source:
+                stmt = stmt.where(Listing.source == source)
             stmt = stmt.order_by(Listing.duplicate_confidence.desc().nulls_last()).limit(limit)
 
             result = await session.execute(stmt)

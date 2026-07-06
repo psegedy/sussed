@@ -174,15 +174,14 @@ async def check_listing(
         listing.duplicate_checked_at = now
         return None
 
-    if allow_fetch and scraper is not None and client is not None:
-        if _needs_enrichment(listing):
-            await _ensure_enriched(listing, scraper, client, now)
-        for candidate in older_candidates:
-            if (
-                _needs_enrichment(candidate)
-                and _enum_value(candidate.status) == ListingStatus.ACTIVE.value
-            ):
-                await _ensure_enriched(candidate, scraper, client, now)
+    # Confirm-on-demand enriches ONLY the freshly-seen listing (which is live).
+    # We deliberately never fetch the older candidates: a relisted property's
+    # predecessor is usually already deleted (404 upstream), so fetching it is
+    # wasteful and unreliable. Dedup matches on each candidate's STORED data.
+    # Detecting that an old listing is gone (so it drops out of results) is a
+    # separate concern handled by the scrape/enrich refresh path, not by dedup.
+    if allow_fetch and scraper is not None and client is not None and _needs_enrichment(listing):
+        await _ensure_enriched(listing, scraper, client, now)
 
     best_match: DuplicateMatch | None = None
     best_candidate: Listing | None = None

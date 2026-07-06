@@ -234,7 +234,7 @@ def test_dedup_list_shows_flagged_pair(monkeypatch: pytest.MonkeyPatch) -> None:
     asyncio.run(_setup())
 
     monkeypatch.setattr("sussed.cli.console", __import__("rich.console", fromlist=["Console"]).Console(width=200, color_system=None))
-    result = runner.invoke(app, ["dedup", "list"])
+    result = runner.invoke(app, ["dedup", "list", "--source", source])
     assert result.exit_code == 0, result.output
     newer_id, older_id = ids
     assert str(newer_id)[:8] in result.output

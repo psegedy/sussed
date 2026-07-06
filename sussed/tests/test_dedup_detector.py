@@ -196,11 +196,18 @@ async def test_check_listing_caps_same_run_active_duplicates_to_suspected() -> N
 
 
 @pytest.mark.asyncio
-async def test_check_listing_fetches_missing_detail_and_marks_410_sold() -> None:
+async def test_check_listing_enriches_only_live_listing_not_candidates() -> None:
+    """Dedup enriches only the freshly-seen listing; it never fetches older
+    candidates. A relisted property's predecessor is usually already deleted, so
+    dedup matches candidates on STORED data and leaves them untouched (deletion
+    detection is a separate concern)."""
     source = "pytest-dedup-confirm-on-demand"
     await _clean_source(source)
     old_time = datetime(2026, 1, 1, 10, 0, 0)
     new_time = datetime(2026, 1, 3, 10, 0, 0)
+    # Two side effects are wired up on purpose: if dedup ever fetched the
+    # candidate, the second (410) would fire and wrongly mark it SOLD — so the
+    # assertions below prove we fetch exactly once (the live listing only).
     scraper = SimpleNamespace(
         fetch_listing_details=AsyncMock(side_effect=[_detail_fixture(), _gone_error()])
     )
@@ -226,10 +233,14 @@ async def test_check_listing_fetches_missing_detail_and_marks_410_sold() -> None
         async with httpx.AsyncClient() as client:
             await check_listing(session, listing, scraper=scraper, client=client, allow_fetch=True)
 
-    assert scraper.fetch_listing_details.await_count == 2
+    # Only the live listing was fetched — never the older candidate.
+    assert scraper.fetch_listing_details.await_count == 1
     assert listing.description is not None
     assert listing.floor is not None
-    assert candidate.status == ListingStatus.SOLD
+    # The old candidate is matched on stored data and left untouched by dedup:
+    # NOT fetched, NOT marked SOLD (deletion detection lives elsewhere).
+    assert candidate.status == ListingStatus.ACTIVE
+    assert candidate.description is None
 
 
 @pytest.mark.asyncio
