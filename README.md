@@ -32,11 +32,12 @@ uv sync                      # install deps
 uv run sussed db init        # create tables
 uv run sussed scrape -c brno -m 5   # grab some listings
 uv run sussed hunt -c search_config.yaml --scrape   # score them
+uv run sussed feed --open    # browse the best picks in a slick web feed
 ```
 
 ## 📚 Docs
 
-- **[CLI reference](sussed/docs/cli.md)** — every command, every flag, with examples (`scrape`, `listings`, `hunt`, `drops`, `enrich`, `review`, `service`, `url`, `db`)
+- **[CLI reference](sussed/docs/cli.md)** — every command, every flag, with examples (`scrape`, `listings`, `hunt`, `drops`, `enrich`, `review`, `service`, `feed`, `url`, `db`)
 - **[Configuration reference](sussed/docs/configuration.md)** — environment variables + the full YAML schema for hunt configs (criteria, scoring, output, runner)
 - **Example configs** — [`sussed/search_config.yaml`](sussed/search_config.yaml) (apartments), [`sussed/cottage_config.yaml`](sussed/cottage_config.yaml), [`sussed/garden_config.yaml`](sussed/garden_config.yaml), [`sussed/simple_config.yaml`](sussed/simple_config.yaml)
 - **AI review skills** — invoke from Copilot CLI or Claude Code (no LLM API key needed; the coding agent IS the reviewer)
