@@ -43,7 +43,7 @@ def _decimal_to_float(value: Any) -> float | None:
         return float(value)
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -72,7 +72,7 @@ def _safe_float(value: Any) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
