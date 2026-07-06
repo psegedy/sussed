@@ -27,6 +27,8 @@ app = typer.Typer(
 console = Console()
 review_app = typer.Typer(help="AI review workflow commands 🧠")
 app.add_typer(review_app, name="review")
+service_app = typer.Typer(help="Scheduled daily service management 🕐")
+app.add_typer(service_app, name="service")
 
 UUID_PREFIX_RE = re.compile(r"^[0-9a-fA-F]{4,36}$")
 
@@ -1667,6 +1669,92 @@ def review_picks(
         f"\n[dim]Showing {len(results)} listings. "
         "Bold * = AI-corrected usable area (incl. parking in price/m²)[/dim]"
     )
+
+
+@service_app.command("install")
+def service_install(
+    time: str = typer.Option(
+        "10:00",
+        "--time",
+        "-t",
+        help="Daily run time in HH:MM format (24h)",
+    ),
+    config: str = typer.Option(
+        "search_config.yaml",
+        "--config",
+        "-c",
+        help="Path to search config YAML file",
+    ),
+) -> None:
+    """Install the daily sussed service 🚀
+
+    Sets up a scheduled service that runs daily to:
+    1. Scrape fresh listings with sussed hunt
+    2. AI-review top candidates via Copilot CLI
+    3. Generate a daily report with top picks
+    4. Send a desktop notification when done
+
+    On macOS: installs a launchd agent (also runs at login if today's run
+    was missed). On Linux: installs a systemd user timer with Persistent=true
+    (catches up after boot).
+
+    Run this from the sussed project directory (where pyproject.toml lives).
+
+    Examples:
+        # Install with defaults (10:00 AM daily)
+        uv run sussed service install
+
+        # Custom time
+        uv run sussed service install --time 07:30
+
+        # Custom config
+        uv run sussed service install -c my_search.yaml -t 09:00
+    """
+    from sussed.service import install_service
+
+    try:
+        install_service(time_str=time, config_path=config)
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@service_app.command("uninstall")
+def service_uninstall() -> None:
+    """Uninstall the daily sussed service 🗑️
+
+    Stops and removes the scheduled service. Keeps logs and data in
+    ~/.sussed/ so you don't lose history.
+
+    Examples:
+        uv run sussed service uninstall
+    """
+    from sussed.service import uninstall_service
+
+    try:
+        uninstall_service()
+    except (RuntimeError, OSError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@service_app.command("status")
+def service_status() -> None:
+    """Show daily service status 📊
+
+    Displays whether the service is installed, the last run date, and
+    recent report files.
+
+    Examples:
+        uv run sussed service status
+    """
+    from sussed.service import show_service_status
+
+    try:
+        show_service_status()
+    except (RuntimeError, OSError) as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
