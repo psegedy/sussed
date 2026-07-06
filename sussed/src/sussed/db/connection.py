@@ -81,6 +81,45 @@ async def init_db() -> None:
         if conn.dialect.name == "postgresql":
             await conn.execute(text("ALTER TYPE propertycategory ADD VALUE IF NOT EXISTS 'COTTAGE'"))
             await conn.execute(text("ALTER TYPE propertycategory ADD VALUE IF NOT EXISTS 'GARDEN'"))
+            await conn.execute(
+                text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_of_id UUID")
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE listings ADD COLUMN IF NOT EXISTS "
+                    "duplicate_confidence NUMERIC(4, 3)"
+                )
+            )
+            await conn.execute(
+                text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_status VARCHAR")
+            )
+            await conn.execute(
+                text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_reasons JSONB")
+            )
+            await conn.execute(
+                text(
+                    "ALTER TABLE listings ADD COLUMN IF NOT EXISTS "
+                    "duplicate_checked_at TIMESTAMP WITHOUT TIME ZONE"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_listings_duplicate_of_id "
+                    "ON listings (duplicate_of_id)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_listings_duplicate_status "
+                    "ON listings (duplicate_status)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_listings_dedup_blocking "
+                    "ON listings (source, property_category, listing_type, city, apartment_type)"
+                )
+            )
 
 
 async def close_db() -> None:
