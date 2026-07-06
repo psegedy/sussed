@@ -67,8 +67,15 @@ async def find_candidates(
     listing: Listing,
     config: DedupConfig | None = None,
     max_candidates: int = 8,
+    older_than: Listing | None = None,
 ) -> list[Listing]:
-    """Find cheaply-blocked candidate listings and rank likely relistings first."""
+    """Find cheaply-blocked candidate listings and rank likely relistings first.
+
+    If ``older_than`` is given, only rows strictly older than that listing
+    (by ``_older_key``) survive the filter before ranking and the cap are applied.
+    When ``older_than`` is ``None`` the behaviour is unchanged: all blocked rows
+    are ranked and capped.
+    """
     dedup_config = config or DedupConfig()
     conditions = [
         Listing.id != listing.id,
@@ -97,6 +104,9 @@ async def find_candidates(
 
     result = await session.execute(select(Listing).where(*conditions))
     candidates = list(result.scalars().all())
+    if older_than is not None:
+        ref_key = _older_key(older_than)
+        candidates = [c for c in candidates if _older_key(c) < ref_key]
     candidates.sort(key=lambda candidate: _candidate_rank_key(listing, candidate))
     return candidates[:max_candidates]
 
@@ -142,10 +152,7 @@ async def check_listing(
 
     now = _utcnow()
     dedup_config = config or DedupConfig()
-    candidates = await find_candidates(session, listing, dedup_config)
-    older_candidates = [
-        candidate for candidate in candidates if _older_key(candidate) < _older_key(listing)
-    ]
+    older_candidates = await find_candidates(session, listing, dedup_config, older_than=listing)
 
     if not older_candidates:
         listing.duplicate_checked_at = now
