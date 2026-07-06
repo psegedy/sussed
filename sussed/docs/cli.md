@@ -5,7 +5,7 @@ canonical: true
 project_dir: sussed/
 run_prefix: uv run sussed
 source: src/sussed/cli.py
-commands: [scrape, listings, hunt, drops, enrich, review, service, feed, url, db, version]
+commands: [scrape, listings, refresh, hunt, drops, enrich, review, service, feed, url, db, version]
 related: [docs/configuration.md]
 keywords: [brno, sreality, scrape, score, hunt, review, feed, html, price-drop]
 updated: 2026-07-06
@@ -29,6 +29,7 @@ commands:
   drops:    { purpose: "List price decreases (incl. dropped-to-POA)", anchor: "#price-drops-" }
   dedup:    { purpose: "Detect/link re-added (relisted) duplicate listings", anchor: "#duplicate-detection-" }
   enrich:   { purpose: "Fetch descriptions + pre-warm photo cache", anchor: "#ai-reviewing-saved-listings" }
+  refresh:  { purpose: "Re-check active listings: mark gone as removed, refresh price/details", anchor: "#refresh-existing-listings-" }
   review:   { purpose: "AI review workflow (candidates/prepare/validate/save/picks/status)", anchor: "#ai-reviewing-saved-listings" }
   service:  { purpose: "Install/manage the scheduled daily runner", anchor: "#scheduled-service-" }
   feed:     { purpose: "Generate a static HTML feed of best listings", anchor: "#web-feed-", writes: sussed-feed.html }
@@ -121,6 +122,34 @@ uv run sussed listings --format md --output listings.md
 | `-l, --limit` | Number of results | 20 |
 | `-f, --format` | Output format: table or md | table |
 | `-o, --output` | Write to file instead of stdout | stdout |
+
+## Refresh Existing Listings 🔄
+
+Re-fetch the detail page for already-stored active listings to detect removals (404/410 → `removed`) and refresh price, description, and features. Useful after a scrape to catch listings that sold or expired without triggering a fresh scrape.
+
+```bash
+# Re-check the 200 stalest Brno listings (mark gone as removed, refresh price/details)
+uv run sussed refresh --city brno --limit 200
+
+# Only listings not seen in the last 14 days
+uv run sussed refresh --stale-days 14
+
+# Preview without saving
+uv run sussed refresh --dry-run
+
+# Full run against the default source
+uv run sussed refresh --limit 500
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--source` | Source to refresh | sreality |
+| `-c, --city` | Filter by city (substring, case-insensitive) | all |
+| `-l, --limit` | Max listings to re-check | 100 |
+| `--stale-days` | Only listings not seen in the last N days | all active |
+| `--dry-run` | Preview without saving any changes | false |
+
+Listings are selected oldest-`last_seen_at`-first so the stalest ones are always refreshed first. On success, `last_seen_at` is bumped so the listing moves to the back of the queue on the next run.
 
 ## AI Reviewing Saved Listings
 
