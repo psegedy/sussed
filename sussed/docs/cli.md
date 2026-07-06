@@ -157,6 +157,42 @@ uv run sussed hunt --best 10 -f json -s results.json
 
 See [configuration.md](configuration.md) for the full YAML schema.
 
+## Scheduled Service 🕐
+
+Set up a daily "set it and forget it" job that scrapes fresh listings, AI-reviews the promising ones via Copilot CLI, writes a report, and pings you with a desktop notification. Uses **launchd** on macOS and a **systemd user timer** on Linux — no root, no cron.
+
+```bash
+# Install with defaults (runs daily at 10:00)
+uv run sussed service install
+
+# Pick your own time (24h HH:MM) and config
+uv run sussed service install --time 07:30 --config search_config.yaml
+
+# Is it alive? Last run? Recent reports?
+uv run sussed service status
+
+# Rip it out (keeps your logs + reports in ~/.sussed/)
+uv run sussed service uninstall
+```
+
+Run `install` from the project directory (where `pyproject.toml` lives). Each day the service:
+
+1. Runs `sussed hunt --scrape` (fresh listings + quick scores)
+2. Runs `copilot` non-interactively to review new apartments with the `sussed-ai-review` skill
+3. Writes a report to `~/.sussed/results/YYYY-MM-DD-daily-report.md`
+4. Fires a desktop notification with the pick count
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-t, --time` | Daily run time (24h HH:MM) | 10:00 |
+| `-c, --config` | Path to search config YAML | search_config.yaml |
+
+**Missed a day?** If your machine was off at the scheduled time, the job catches up on next boot/login (systemd `Persistent=true`; launchd `RunAtLoad` + a schedule-aware guard) — but never runs twice in a day.
+
+**Logs:** `~/.sussed/service.log` (plus the system journal on Linux / `~/.sussed/launchd.log` on macOS).
+
+> ⚠️ **Security note:** step 2 runs `copilot` non-interactively over **scraped** listing text, which is untrusted. A malicious listing could attempt prompt injection. Permissions are scoped (no network/URL access, pinned working dir), but only point this at real-estate portals you trust.
+
 ## Price Drops 📉
 
 Show every active listing that has had a price decrease, sorted by most-recent drop. Catches both regular decreases AND the sneaky "switched to POA" case where the seller hides the new price.
