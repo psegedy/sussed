@@ -2,7 +2,7 @@
 
 These models are output-only: they are serialized to JSON with
 ``model_dump(mode="json")`` and injected into the generated HTML. The client-side
-JavaScript reads them back and renders each :class:`FeedPost` as one Instagram-style
+JavaScript reads them back and renders each :class:`FeedPost` as one feed
 post. The payload is normalized (a ``posts`` map keyed by id plus ordered id lists
 per tab) so a listing appearing in both tabs is only serialized once.
 """
