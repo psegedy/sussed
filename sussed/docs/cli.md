@@ -27,6 +27,7 @@ commands:
   listings: { purpose: "View stored listings (table/markdown/json)", anchor: "#viewing-listings" }
   hunt:     { purpose: "Score + rank listings from a YAML config", anchor: "#autonomous-hunt-mode-" }
   drops:    { purpose: "List price decreases (incl. dropped-to-POA)", anchor: "#price-drops-" }
+  dedup:    { purpose: "Detect/link re-added (relisted) duplicate listings", anchor: "#duplicate-detection-" }
   enrich:   { purpose: "Fetch descriptions + pre-warm photo cache", anchor: "#ai-reviewing-saved-listings" }
   review:   { purpose: "AI review workflow (candidates/prepare/validate/save/picks/status)", anchor: "#ai-reviewing-saved-listings" }
   service:  { purpose: "Install/manage the scheduled daily runner", anchor: "#scheduled-service-" }
@@ -320,13 +321,57 @@ Open the generated file directly in any browser, or serve the folder with
 `python -m http.server` and browse to it. The page is fully offline-capable except for
 the listing photos (hotlinked from sreality's CDN) and web fonts.
 
+## Duplicate Detection 🔍
+
+Sreality issues a **new listing** (new `hash_id`) when a property is removed and reposted — often at a **reduced price**. Detection links the newer listing to its older twin **non-destructively** (advisory `duplicate_of_id` + confidence + reasons; nothing is merged or hidden). It runs automatically at **scrape ingest** for new listings — *confirm-on-demand*, i.e. it only fetches a listing's detail when a cheap candidate match is found — and can be backfilled on demand.
+
+Guardrails avoid flagging *distinct* units (different floors, or many near-identical units in one new development): vetoes on sale-vs-rent, GPS distance, apartment area, and floor; new-builds are capped at `suspected`.
+
+```bash
+# View flagged relisting pairs (newer ↔ older twin, confidence, price delta, reasons)
+uv run sussed dedup list
+
+# Only high-confidence duplicates, in Brno
+uv run sussed dedup list --status duplicate --city brno
+
+# Backfill detection over stored listings (stored fields only — no API calls)
+uv run sussed dedup scan
+
+# Preview without saving; only listings first seen in the last 30 days
+uv run sussed dedup scan --dry-run --since 30
+
+# Re-check everything (e.g. after tuning the logic)
+uv run sussed dedup scan --force
+```
+
+`dedup list` flags:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--status` | Filter by `duplicate` or `suspected` | all |
+| `-c, --city` | Filter by city | all |
+| `-l, --limit` | Max pairs to show | 50 |
+
+`dedup scan` flags:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--source` | Source to scan | sreality |
+| `-c, --city` | Filter by city | all |
+| `--since` | Only listings first seen in the last N days | all |
+| `--unchecked` | Only listings not yet checked | false |
+| `-l, --limit` | Max listings to scan (0 = no cap) | 0 |
+| `--dry-run` | Preview without saving (rolls back) | false |
+| `--force` | Re-check already-checked listings | false |
+
+`dedup scan` uses **stored fields only (no sreality API calls)**; fresh scrapes already run detection at ingest.
+
 ## Getting Listing URLs
 
 ```bash
 # Get URL by listing ID (supports partial IDs)
 uv run sussed url c17c0eb1
 ```
-
 ## Database Management
 
 ```bash
