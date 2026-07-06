@@ -200,3 +200,26 @@ class TestRunChecked:
     def test_ok_on_success(self) -> None:
         # Should not raise.
         service._run_checked(["sh", "-c", "exit 0"])
+
+
+class TestIsInstalled:
+    def test_darwin_true_when_plist_exists(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        plist = tmp_path / "com.sussed.daily.plist"
+        plist.write_text("x")
+        monkeypatch.setattr(service, "LAUNCHD_PLIST_PATH", plist)
+        assert service._is_installed("darwin") is True
+
+    def test_darwin_false_when_missing(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(service, "LAUNCHD_PLIST_PATH", tmp_path / "nope.plist")
+        assert service._is_installed("darwin") is False
+
+    def test_linux_requires_both_units(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        svc = tmp_path / "sussed-daily.service"
+        timer = tmp_path / "sussed-daily.timer"
+        svc.write_text("x")
+        monkeypatch.setattr(service, "SYSTEMD_SERVICE_PATH", svc)
+        monkeypatch.setattr(service, "SYSTEMD_TIMER_PATH", timer)
+        # Only the service exists, not the timer -> not installed.
+        assert service._is_installed("linux") is False
+        timer.write_text("x")
+        assert service._is_installed("linux") is True
