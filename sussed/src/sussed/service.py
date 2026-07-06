@@ -114,6 +114,13 @@ def _run_checked(cmd: list[str]) -> None:
         raise RuntimeError(f"Command failed ({' '.join(cmd)}): {detail}")
 
 
+def _is_installed(os_type: str) -> bool:
+    """Return True if service files are already present for this OS."""
+    if os_type == "linux":
+        return SYSTEMD_TIMER_PATH.exists() and SYSTEMD_SERVICE_PATH.exists()
+    return LAUNCHD_PLIST_PATH.exists()
+
+
 # --------------------------------------------------------------------------- #
 # Template rendering                                                           #
 # --------------------------------------------------------------------------- #
@@ -168,6 +175,10 @@ def install_service(time_str: str, config_path: str) -> None:
     os_type = _detect_os()
     hour, minute = _parse_time(time_str)
 
+    # Capture up front: if a working install already exists, a failed
+    # re-install must NOT tear it down (that would delete a healthy service).
+    had_prior_install = _is_installed(os_type)
+
     home = str(Path.home())
     uv_path = _resolve_binary("uv")
     copilot_path = _resolve_binary("copilot")
@@ -207,10 +218,13 @@ def install_service(time_str: str, config_path: str) -> None:
             _install_launchd(home, hour, minute)
     except Exception:
         # Roll back generated files so a failed install doesn't leave a
-        # half-configured service behind.
-        logger.error("Install failed; rolling back generated files.")
-        with contextlib.suppress(Exception):
-            _teardown(os_type)
+        # half-configured service behind — but only for a FRESH install.
+        # If a working install already existed, leave it untouched.
+        logger.error("Install failed.")
+        if not had_prior_install:
+            logger.error("Rolling back generated files (fresh install).")
+            with contextlib.suppress(Exception):
+                _teardown(os_type)
         raise
 
     console.print("\n[green]✅ sussed daily service installed![/green]")
@@ -232,7 +246,10 @@ def _install_systemd(hour: int, minute: int) -> None:
     logger.info(f"Generated: {SYSTEMD_SERVICE_PATH}, {SYSTEMD_TIMER_PATH}")
 
     _run_checked(["systemctl", "--user", "daemon-reload"])
-    _run_checked(["systemctl", "--user", "enable", "--now", "sussed-daily.timer"])
+    _run_checked(["systemctl", "--user", "enable", "sussed-daily.timer"])
+    # restart (not just `enable --now`) so a re-install with a new --time
+    # actually reloads the OnCalendar of an already-active timer.
+    _run_checked(["systemctl", "--user", "restart", "sussed-daily.timer"])
     logger.info("systemd timer enabled and started")
 
 
@@ -289,12 +306,7 @@ def show_service_status() -> None:
 
     console.print("\n[bold]sussed daily service status[/bold]\n")
 
-    if os_type == "linux":
-        installed = SYSTEMD_TIMER_PATH.exists() and SYSTEMD_SERVICE_PATH.exists()
-    else:
-        installed = LAUNCHD_PLIST_PATH.exists()
-
-    if not installed:
+    if not _is_installed(os_type):
         console.print("[yellow]Not installed.[/yellow]")
         console.print("Run [cyan]sussed service install[/cyan] to set up.")
         return
