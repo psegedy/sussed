@@ -285,6 +285,96 @@ async def get_reviewed_picks(
     return list(result.scalars().all())
 
 
+async def get_recent_scored_listings(
+    session: AsyncSession,
+    *,
+    max_age_days: int,
+    limit: int,
+    district: str | None = None,
+    min_score: int | None = None,
+    property_type: str | None = None,
+) -> list[Listing]:
+    """Get recently-listed, scored listings ranked by effective score.
+
+    Powers the feed's "Fresh" tab: listings whose portal date (``updated_at_source``,
+    falling back to ``first_seen_at``) is within ``max_age_days``, ordered by an
+    *effective* score. The effective score is the full AI review score
+    (``ai_score``) when present, otherwise the cheap hunt quick-score stashed in
+    ``ai_analysis->>'score'``. This deliberately surfaces strong-but-not-yet-reviewed
+    listings — not necessarily an AI-reviewed score.
+
+    The quick-score cast is guarded by a regex so a malformed JSON value can never
+    abort feed generation, and never-scored listings (effective score ``NULL``) are
+    excluded so the tab is not padded with unscored noise.
+
+    Args:
+        session: Database session.
+        max_age_days: Only include listings within this many days of their portal date.
+        limit: Maximum number of listings to return.
+        district: Optional case-insensitive district filter.
+        min_score: Optional minimum effective score.
+        property_type: Optional PropertyCategory value ('apartment'/'house'/...).
+
+    Returns:
+        Active, scored listings ordered by effective score (reviewed first on ties),
+        then most-recently-seen.
+    """
+    if limit <= 0:
+        return []
+
+    from sqlalchemy import case, cast, desc
+    from sqlalchemy.sql.functions import coalesce
+    from sqlalchemy.types import Integer
+
+    # Effective score = ai_score ?? int(ai_analysis->>'score') with a safe cast:
+    # only digits (optionally signed) are cast, so junk JSON never raises.
+    score_text = Listing.ai_analysis.op("->>")("score")
+    effective_score = coalesce(
+        Listing.ai_score,
+        case((score_text.op("~")(r"^-?\d+$"), cast(score_text, Integer)), else_=None),
+    )
+
+    conditions = [Listing.status == ListingStatus.ACTIVE, effective_score.isnot(None)]
+
+    freshness_cutoff = _utcnow() - timedelta(days=max_age_days)
+    conditions.append(
+        or_(
+            Listing.updated_at_source >= freshness_cutoff,
+            and_(Listing.updated_at_source.is_(None), Listing.first_seen_at >= freshness_cutoff),
+        )
+    )
+
+    if district:
+        conditions.append(Listing.district.ilike(f"%{district}%"))
+
+    if min_score is not None:
+        conditions.append(effective_score >= min_score)
+
+    if property_type:
+        from sussed.db.models import PropertyCategory
+
+        try:
+            cat = PropertyCategory(property_type.lower())
+            conditions.append(Listing.property_category == cat)
+        except ValueError as exc:
+            valid = ", ".join(c.value for c in PropertyCategory)
+            raise ValueError(f"Unknown property_type {property_type!r}. Valid: {valid}") from exc
+
+    stmt = (
+        select(Listing)
+        .where(*conditions)
+        .order_by(
+            desc(effective_score),
+            desc(Listing.ai_reviewed_at.isnot(None)),
+            desc(Listing.first_seen_at),
+        )
+        .limit(limit)
+    )
+
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_price_history_payload(
     session: AsyncSession, listing_id: UUID
 ) -> list[dict[str, Any]]:
@@ -305,6 +395,48 @@ async def get_price_history_payload(
         }
         for row in result.scalars().all()
     ]
+
+
+async def get_price_histories_for_listings(
+    session: AsyncSession, listing_ids: list[UUID]
+) -> dict[str, list[dict[str, Any]]]:
+    """Batch-load price history for many listings in a single query.
+
+    Avoids N+1 queries when building the feed: one ``WHERE listing_id IN (...)``
+    fetch grouped in Python. Each listing's entries keep the same JSON-safe shape
+    and DESC-by-``recorded_at`` order as :func:`get_price_history_payload`.
+
+    Args:
+        session: Database session.
+        listing_ids: Listing UUIDs to load history for.
+
+    Returns:
+        Map from ``str(listing_id)`` to its price-history dicts. Listings with no
+        history are omitted; callers should default to an empty list.
+    """
+    if not listing_ids:
+        return {}
+
+    result = await session.execute(
+        select(PriceHistory)
+        .where(PriceHistory.listing_id.in_(listing_ids))
+        .order_by(PriceHistory.listing_id, PriceHistory.recorded_at.desc())
+    )
+    histories: dict[str, list[dict[str, Any]]] = {}
+    for row in result.scalars().all():
+        histories.setdefault(str(row.listing_id), []).append(
+            {
+                "price_czk": row.price_czk,
+                "price_per_m2": row.price_per_m2,
+                "change_type": row.change_type,
+                "change_amount": row.change_amount,
+                "change_percent": (
+                    float(row.change_percent) if row.change_percent is not None else None
+                ),
+                "recorded_at": row.recorded_at.isoformat(),
+            }
+        )
+    return histories
 
 
 async def download_listing_images(
