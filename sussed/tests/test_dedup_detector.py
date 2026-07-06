@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -341,3 +342,92 @@ async def test_find_candidates_older_than_filters_before_cap() -> None:
         assert unfiltered[0].external_id in {"702", "703"}, (
             "without older_than filter a distance=0 newer listing should win"
         )
+
+
+@pytest.mark.asyncio
+async def test_check_listing_clears_stale_fields_when_no_candidate() -> None:
+    """Fix 1: stale duplicate metadata must be cleared when no older candidate qualifies."""
+    source = "pytest-dedup-stale-clear"
+    await _clean_source(source)
+
+    async with get_session() as session:
+        listing = _listing(source=source, external_id="800")
+        # Seed with stale duplicate metadata (simulates a corrected false positive)
+        listing.duplicate_of_id = uuid.uuid4()
+        listing.duplicate_status = "suspected"
+        listing.duplicate_confidence = Decimal("0.750")
+        listing.duplicate_reasons = ["stale reason from previous run"]
+        listing.duplicate_checked_at = datetime(2026, 1, 1, 10, 0, 0)
+        session.add(listing)
+        await session.commit()
+
+        # force=True bypasses idempotency guard; no older candidate exists → no-match branch
+        match = await check_listing(session, listing, allow_fetch=False, force=True)
+
+    assert match is None
+    assert listing.duplicate_of_id is None
+    assert listing.duplicate_status is None
+    assert listing.duplicate_confidence is None
+    assert listing.duplicate_reasons is None
+    assert listing.duplicate_checked_at is not None
+    assert listing.duplicate_checked_at > datetime(2026, 1, 1, 10, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_find_candidates_floor_compatible_ranks_before_cap() -> None:
+    """Fix 2: floor-compatible twin survives the cap over an older floor-incompatible candidate.
+
+    Without Fix 2 the older (earlier first_seen_at) different-floor candidate wins because
+    first_seen_at sorts before floor data in the ranking tuple.  With Fix 2 the
+    floor_incompatible term pushes the different-floor candidate down so the same-floor twin
+    ranks first and survives max_candidates=1.
+    """
+    source = "pytest-dedup-floor-rank"
+    await _clean_source(source)
+
+    ref_time = datetime(2026, 3, 1, 12, 0, 0)
+    # diff-floor listing is OLDER (would rank first without Fix 2 due to first_seen_at)
+    diff_floor_time = datetime(2026, 1, 1, 12, 0, 0)
+    # same-floor twin is more recent (would lose cap without Fix 2)
+    same_floor_time = datetime(2026, 2, 1, 12, 0, 0)
+
+    lat = Decimal("49.2000000")
+    lon = Decimal("16.6000000")
+
+    async with get_session() as session:
+        reference = _listing(
+            source=source,
+            external_id="900",
+            floor=3,
+            latitude=lat,
+            longitude=lon,
+            first_seen_at=ref_time,
+        )
+        same_floor_twin = _listing(
+            source=source,
+            external_id="901",
+            floor=3,
+            latitude=lat,
+            longitude=lon,
+            first_seen_at=same_floor_time,
+            status=ListingStatus.REMOVED,
+        )
+        diff_floor_candidate = _listing(
+            source=source,
+            external_id="902",
+            floor=5,
+            latitude=lat,
+            longitude=lon,
+            first_seen_at=diff_floor_time,
+            status=ListingStatus.REMOVED,
+        )
+        session.add_all([reference, same_floor_twin, diff_floor_candidate])
+        await session.commit()
+
+        candidates = await find_candidates(session, reference, max_candidates=1, older_than=reference)
+
+    assert len(candidates) == 1, "expected exactly one older candidate after cap"
+    assert candidates[0].external_id == "901", (
+        f"expected same-floor twin '901' but got '{candidates[0].external_id}'; "
+        "floor_incompatible must rank before first_seen_at in the sort key"
+    )

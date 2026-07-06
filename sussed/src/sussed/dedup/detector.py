@@ -113,7 +113,7 @@ async def find_candidates(
 
 def _candidate_rank_key(
     listing: Listing, candidate: Listing
-) -> tuple[float, float, int, datetime, uuid.UUID]:
+) -> tuple[float, int, float, int, datetime, uuid.UUID]:
     """Return cheap ranking signals for blocked candidates."""
     listing_lat = _float_or_none(listing.latitude)
     listing_lon = _float_or_none(listing.longitude)
@@ -124,6 +124,18 @@ def _candidate_rank_key(
     else:
         distance = haversine_m(listing_lat, listing_lon, candidate_lat, candidate_lon)
 
+    # Among candidates at the same GPS, sort likely-twins (same floor) before known-different units.
+    # When either floor is None, floor_incompatible=0 so behavior is unchanged vs no-floor data.
+    floor_incompatible = (
+        1
+        if (
+            listing.floor is not None
+            and candidate.floor is not None
+            and listing.floor != candidate.floor
+        )
+        else 0
+    )
+
     listing_area = _float_or_none(listing.area_m2)
     candidate_area = _float_or_none(candidate.area_m2)
     area_diff = (
@@ -132,7 +144,7 @@ def _candidate_rank_key(
         else abs(listing_area - candidate_area)
     )
     is_active = 1 if _enum_value(candidate.status) == ListingStatus.ACTIVE.value else 0
-    return (distance, area_diff, is_active, candidate.first_seen_at, candidate.id)
+    return (distance, floor_incompatible, area_diff, is_active, candidate.first_seen_at, candidate.id)
 
 
 async def check_listing(
@@ -155,6 +167,10 @@ async def check_listing(
     older_candidates = await find_candidates(session, listing, dedup_config, older_than=listing)
 
     if not older_candidates:
+        listing.duplicate_of_id = None
+        listing.duplicate_status = None
+        listing.duplicate_confidence = None
+        listing.duplicate_reasons = None
         listing.duplicate_checked_at = now
         return None
 
@@ -181,6 +197,10 @@ async def check_listing(
 
     listing.duplicate_checked_at = now
     if best_match is None or best_candidate is None:
+        listing.duplicate_of_id = None
+        listing.duplicate_status = None
+        listing.duplicate_confidence = None
+        listing.duplicate_reasons = None
         return None
 
     final_status = best_match.status
