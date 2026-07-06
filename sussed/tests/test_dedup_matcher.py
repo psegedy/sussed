@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from sussed.dedup.matcher import (
+    DedupConfig,
     DedupListing,
     haversine_m,
     image_overlap,
@@ -271,3 +272,48 @@ def test_score_pair_confidence_is_symmetric(listing_factory: Callable[..., Dedup
     new = listing_factory(external_id="new-456", status="active", price_czk=6_100_000)
 
     assert score_pair(old, new) == score_pair(new, old)
+
+
+# ---------------------------------------------------------------------------
+# DedupConfig validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_config_default_constructs_fine() -> None:
+    config = DedupConfig()
+    assert config.threshold_duplicate == pytest.approx(0.85)
+
+
+def test_dedup_config_rejects_nan_weight() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        DedupConfig(weight_gps=float("nan"))
+
+
+def test_dedup_config_rejects_inf_weight() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        DedupConfig(weight_gps=float("inf"))
+
+
+def test_dedup_config_rejects_out_of_range_weight() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        DedupConfig(weight_gps=1.5)
+
+
+def test_dedup_config_rejects_misordered_thresholds() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        DedupConfig(threshold_suspected=0.9, threshold_duplicate=0.8)
+
+
+def test_dedup_config_rejects_gps_full_greater_than_veto() -> None:
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        DedupConfig(gps_full_m=200.0, gps_veto_m=100.0)
