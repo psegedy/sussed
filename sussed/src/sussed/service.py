@@ -7,6 +7,7 @@ their lifecycle. All user-level — no root required.
 
 from __future__ import annotations
 
+import contextlib
 import platform
 import shlex
 import shutil
@@ -101,6 +102,18 @@ def _build_path_dirs(*binaries: str) -> str:
     return ":".join(dirs)
 
 
+def _run_checked(cmd: list[str]) -> None:
+    """Run ``cmd``; raise ``RuntimeError`` with captured stderr on failure.
+
+    Converts ``subprocess`` failures into a clean, user-facing error instead
+    of an uncaught ``CalledProcessError`` traceback.
+    """
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"Command failed ({' '.join(cmd)}): {detail}")
+
+
 # --------------------------------------------------------------------------- #
 # Template rendering                                                           #
 # --------------------------------------------------------------------------- #
@@ -187,10 +200,18 @@ def install_service(time_str: str, config_path: str) -> None:
     SCRIPT_PATH.chmod(0o700)
     logger.info(f"Generated script: {SCRIPT_PATH}")
 
-    if os_type == "linux":
-        _install_systemd(hour, minute)
-    else:
-        _install_launchd(home, hour, minute)
+    try:
+        if os_type == "linux":
+            _install_systemd(hour, minute)
+        else:
+            _install_launchd(home, hour, minute)
+    except Exception:
+        # Roll back generated files so a failed install doesn't leave a
+        # half-configured service behind.
+        logger.error("Install failed; rolling back generated files.")
+        with contextlib.suppress(Exception):
+            _teardown(os_type)
+        raise
 
     console.print("\n[green]✅ sussed daily service installed![/green]")
     console.print(f"   Schedule: [cyan]{hour:02d}:{minute:02d}[/cyan] daily")
@@ -210,8 +231,8 @@ def _install_systemd(hour: int, minute: int) -> None:
     SYSTEMD_TIMER_PATH.write_text(render_systemd_timer(hour, minute))
     logger.info(f"Generated: {SYSTEMD_SERVICE_PATH}, {SYSTEMD_TIMER_PATH}")
 
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-    subprocess.run(["systemctl", "--user", "enable", "--now", "sussed-daily.timer"], check=True)
+    _run_checked(["systemctl", "--user", "daemon-reload"])
+    _run_checked(["systemctl", "--user", "enable", "--now", "sussed-daily.timer"])
     logger.info("systemd timer enabled and started")
 
 
@@ -221,22 +242,24 @@ def _install_launchd(home: str, hour: int, minute: int) -> None:
         subprocess.run(["launchctl", "unload", str(LAUNCHD_PLIST_PATH)], capture_output=True)
     LAUNCHD_PLIST_PATH.write_text(render_launchd_plist(home, hour, minute))
     logger.info(f"Generated: {LAUNCHD_PLIST_PATH}")
-    subprocess.run(["launchctl", "load", "-w", str(LAUNCHD_PLIST_PATH)], check=True)
+    _run_checked(["launchctl", "load", "-w", str(LAUNCHD_PLIST_PATH)])
     logger.info("launchd agent loaded")
 
 
-def uninstall_service() -> None:
-    """Stop, disable, and remove service files. Keeps logs and data."""
-    os_type = _detect_os()
+def _teardown(os_type: str) -> None:
+    """Stop the service (best-effort) and remove all generated files."""
     if os_type == "linux":
         _uninstall_systemd()
     else:
         _uninstall_launchd()
-
     if SCRIPT_PATH.exists():
         SCRIPT_PATH.unlink()
         logger.info(f"Removed: {SCRIPT_PATH}")
 
+
+def uninstall_service() -> None:
+    """Stop, disable, and remove service files. Keeps logs and data."""
+    _teardown(_detect_os())
     console.print("[green]✅ sussed daily service uninstalled.[/green]")
     console.print("[dim]Logs and data in ~/.sussed/ were kept.[/dim]")
 

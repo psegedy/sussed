@@ -160,3 +160,43 @@ class TestRenderLaunchd:
 
     def test_no_unreplaced_tokens(self) -> None:
         assert "__" not in service.render_launchd_plist("/Users/u", 10, 30)
+
+
+class TestCopilotPrompt:
+    def test_reviews_only_prepared_listings(self) -> None:
+        # Guard against re-reviewing stale *-prepared.json from earlier runs.
+        prompt = COPILOT_PROMPT
+        assert "ONLY the listings prepared in step 1" in prompt
+        assert "older *-prepared.json" in prompt
+
+    def test_no_blind_glob_instruction(self) -> None:
+        # The old prompt globbed every prepared file; that must be gone.
+        assert "For each prepared JSON in .sussed/image-cache/*-prepared.json" not in COPILOT_PROMPT
+
+
+class TestGemCountRendering:
+    def test_counts_json_array_length_not_score_key(self) -> None:
+        # review picks emits "ai_score", not "score" -> grepping "score" is wrong.
+        # We count the JSON array length instead.
+        script = service.render_shell_script(
+            config_path="/c.yaml",
+            project_dir="/p",
+            uv_path="/usr/local/bin/uv",
+            copilot_path="/usr/local/bin/copilot",
+            sched_hhmm="1000",
+            path_dirs="/usr/local/bin:/usr/bin:/bin",
+        )
+        gem_line = next(line for line in script.splitlines() if line.startswith("GEM_COUNT="))
+        assert "json.load(sys.stdin)" in gem_line
+        assert "len(d)" in gem_line
+        assert "grep -o '\"score\"'" not in script
+
+
+class TestRunChecked:
+    def test_raises_on_nonzero_with_stderr(self) -> None:
+        with pytest.raises(RuntimeError, match="Command failed"):
+            service._run_checked(["sh", "-c", "echo boom >&2; exit 3"])
+
+    def test_ok_on_success(self) -> None:
+        # Should not raise.
+        service._run_checked(["sh", "-c", "exit 0"])
