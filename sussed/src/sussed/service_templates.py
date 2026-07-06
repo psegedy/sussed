@@ -14,7 +14,8 @@ from __future__ import annotations
 # via a quoted heredoc, so no shell interpolation happens.
 COPILOT_PROMPT = """Review new sussed apartment listings. Follow these steps exactly:
 1. Run: uv run sussed review prepare-batch -n 20 -p apartment --max-age-days 7 --min-quick-score 400 --recent
-2. For each prepared JSON in .sussed/image-cache/*-prepared.json, use the sussed-ai-review skill to review it. Dispatch in batches of 5-7 listings with 3-4 parallel agents.
+   This prints a JSON array of the listings prepared in THIS run (each has a "prefix" and an "output" path).
+2. Review ONLY the listings prepared in step 1, using their "output" paths. Do NOT review any other or older *-prepared.json files. Use the sussed-ai-review skill, dispatching in batches of 5-7 listings with 3-4 parallel agents.
 3. Validate each review: uv run sussed review validate <review-path>
 4. Save each review: uv run sussed review save <prefix> --input <review-path>
 5. After all reviews complete, show the top picks: uv run sussed review picks --min-score 700"""
@@ -133,7 +134,7 @@ REPORT="$RESULTS_DIR/$TODAY-daily-report.md"
 PICKS_JSON=$("$UV_BIN" run sussed review picks --min-score 700 -f json --max-age-days 7 2>/dev/null || echo "[]")
 END_TIME=$(date +%s)
 DURATION=$(( END_TIME - START_TIME ))
-GEM_COUNT=$( { printf '%s' "$PICKS_JSON" | grep -o '"score"' || true; } | wc -l | tr -d ' ')
+GEM_COUNT=$(printf '%s' "$PICKS_JSON" | "$UV_BIN" run python -c "import sys,json;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else 0)" 2>/dev/null || echo 0)
 
 {
     printf '# sussed Daily Report — %s\\n\\n' "$TODAY"
