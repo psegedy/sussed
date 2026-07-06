@@ -214,33 +214,71 @@
     return media;
   }
 
+  function previousPrice(post) {
+    // Price to show struck-through above the current one: the price it just
+    // dropped from, kept consistent with the change chip. Only for decreases;
+    // an increase must not render a fake "was cheaper" strike. POA hides the
+    // number, so fall back to the last real price before it went POA.
+    if (post.dropped_to_poa && post.original_price) return post.original_price;
+    if (post.is_poa) return null;
+    if (post.change_direction === "decrease") {
+      if (typeof post.last_change_amount === "number" && post.last_change_amount > 0) {
+        return post.price_czk + post.last_change_amount;
+      }
+      if (typeof post.initial_price === "number" && post.initial_price > post.price_czk) {
+        return post.initial_price;
+      }
+    }
+    return null;
+  }
+
   function renderPrice(post) {
+    const block = create("div", "price-block");
+    const unitLabel = post.listing_type === "rent" ? "Kč/měsíc" : "Kč";
+
+    const previous = previousPrice(post);
+    if (previous) {
+      const was = create("s", "price-was");
+      was.title = "Předchozí cena";
+      was.appendChild(create("span", "price-was__value", fmtMoney(previous)));
+      was.appendChild(create("span", "price-was__unit", unitLabel));
+      block.appendChild(was);
+    }
+
     const row = create("div", "price-row");
     const price = create("span", "price", post.is_poa ? "Cena na dotaz" : fmtMoney(post.price_czk));
-    const unit = create("span", "unit", post.is_poa ? "" : post.listing_type === "rent" ? "Kč/měsíc" : "Kč");
+    const unit = create("span", "unit", post.is_poa ? "" : unitLabel);
     append(row, price, unit);
 
     if (post.dropped_to_poa && post.original_price) {
-      row.appendChild(create("span", "chip delta warn", `↓ z ${fmtMoney(post.original_price)}`));
+      row.appendChild(create("span", "chip delta warn", "🙈 cena skryta"));
     } else if (post.change_direction) {
       const direction = post.change_direction === "decrease" ? "down" : "up";
       const arrow = direction === "down" ? "↓" : "↑";
       const change = typeof post.last_change_percent === "number" ? `${pct.format(Math.abs(post.last_change_percent))}%` : fmtMoney(Math.abs(post.last_change_amount || 0));
       row.appendChild(create("span", `chip delta ${direction}`, `${arrow} ${change}`));
-      if (post.initial_price) row.appendChild(create("span", "chip", `z ${fmtMoney(post.initial_price)}`));
     }
-    return row;
+    block.appendChild(row);
+    return block;
   }
 
   function renderStats(post) {
     const stats = create("div", "stat-strip");
-    const firstSeen = fmtDate(post.first_seen_at);
-    if (firstSeen) stats.appendChild(create("span", null, `📅 přidáno ${firstSeen}`));
+    const found = fmtDate(post.first_seen_at);
+    if (found) {
+      const span = create("span", null, `🔎 naskenováno ${found}`);
+      span.title = "Datum, kdy sussed inzerát poprvé naskenoval (ne datum vložení na sreality.cz)";
+      stats.appendChild(span);
+    }
     const updated = fmtDate(post.source_updated_at);
-    if (updated) stats.appendChild(create("span", null, `· aktualizováno ${updated}`));
+    if (updated) {
+      const span = create("span", null, `· aktualizováno ${updated}`);
+      span.title = "Poslední aktualizace inzerátu na sreality.cz";
+      stats.appendChild(span);
+    }
     stats.appendChild(create("span", null, `🖼 ${post.image_count || (post.image_urls || []).length || 0}`));
     if (post.area_m2) stats.appendChild(create("span", null, `${post.area_m2} m²`));
-    if (post.price_per_m2) stats.appendChild(create("span", null, `${fmtMoney(post.price_per_m2)} Kč/m²`));
+    if (!post.is_poa && post.price_per_m2) stats.appendChild(create("span", null, `${fmtMoney(post.price_per_m2)} Kč/m²`));
     return stats;
   }
 
