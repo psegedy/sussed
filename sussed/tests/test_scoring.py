@@ -242,3 +242,42 @@ async def test_known_bad_location_penalty_drops_below_score_cap(
 
     assert result["score"] < 1000
     assert any("Cejl" in flag for flag in result["red_flags"])
+
+
+@pytest.mark.asyncio
+async def test_unenriched_listing_not_penalized_for_missing_parking_or_elevator() -> None:
+    """A listing scored before enrichment (empty features) must NOT eat the
+    require-parking/elevator penalties — that data hasn't been fetched yet.
+    Once enriched and genuinely missing them, the penalties DO apply."""
+    config = SearchConfig(
+        criteria=SearchCriteria(require_parking=True, require_elevator=True),
+        scoring=ScoringWeights(penalty_no_parking=-150, penalty_no_elevator=-100),
+        preferred_districts=PREFERRED_DISTRICTS,
+        known_bad_locations=[],
+    )
+    base = {
+        "apartment_type": "2+kk",
+        "district": "Sadová",
+        "address": None,
+        "description": None,
+        "raw_labels": [],
+        "image_count": 5,
+    }
+    unenriched = {**base, "features": {}}
+    enriched_missing = {
+        **base,
+        "features": {"parking": False, "elevator": False, "building_condition": None},
+    }
+
+    unenriched_score = await score_listing(config, unenriched, is_poa=True, poa_price_threshold=1)
+    enriched_score = await score_listing(config, enriched_missing, is_poa=True, poa_price_threshold=1)
+
+    # No phantom penalties before we have the data.
+    assert not any("Missing parking" in f for f in unenriched_score["red_flags"])
+    assert not any("Missing elevator" in f for f in unenriched_score["red_flags"])
+    assert any("deferred" in r for r in unenriched_score["reasons"])
+    # Genuinely-missing features once enriched are penalised, so the unenriched
+    # score must be strictly higher than the enriched-but-missing score.
+    assert unenriched_score["score"] > enriched_score["score"]
+    assert any("Missing parking" in f for f in enriched_score["red_flags"])
+    assert any("Missing elevator" in f for f in enriched_score["red_flags"])

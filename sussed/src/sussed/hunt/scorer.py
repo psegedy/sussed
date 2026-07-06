@@ -119,6 +119,12 @@ async def score_listing(
     red_flags = []
     highlights = []
     features_dict = listing.get("features") or {}
+    # Enrichment-only fields (parking, elevator, panel, balcony, building
+    # condition, floor, utilities) come from the sreality *detail* endpoint.
+    # Until a listing is enriched, features_dict is empty — so we must NOT
+    # penalize "missing" features we simply haven't fetched yet. Bonuses still
+    # apply once the data is present (pass 2 re-scores after enrichment).
+    is_enriched = bool(features_dict)
     description = listing.get("description") or ""
     desc_lower = description.lower()
 
@@ -264,12 +270,17 @@ async def score_listing(
         features_dict.get("elevator") or any("výtah" in label for label in labels_flat)
     )
 
+    if not is_enriched:
+        reasons.append(
+            "⏳ Not enriched yet — parking/elevator/feature penalties deferred until detail fetch"
+        )
+
     if criteria.require_parking:
         if has_parking:
             score += 75
             highlights.append("Has parking ✓")
             counted_feature_keys.add("parking")
-        else:
+        elif is_enriched:
             score += scoring.penalty_no_parking
             red_flags.append("Missing parking")
     elif has_parking:
@@ -282,7 +293,7 @@ async def score_listing(
             score += 35
             highlights.append("Has balcony/loggia ✓")
             counted_feature_keys.add("balcony")
-        else:
+        elif is_enriched:
             score += scoring.penalty_no_balcony
             red_flags.append(f"Missing balcony (required) ({scoring.penalty_no_balcony})")
     elif has_balcony:
@@ -290,7 +301,7 @@ async def score_listing(
         highlights.append("Has outdoor space")
         counted_feature_keys.add("balcony")
 
-    if not is_outdoor_property and criteria.require_elevator and not has_elevator:
+    if not is_outdoor_property and criteria.require_elevator and not has_elevator and is_enriched:
         score += scoring.penalty_no_elevator
         red_flags.append(f"Missing elevator (required) ({scoring.penalty_no_elevator})")
 
@@ -335,7 +346,7 @@ async def score_listing(
         if has_electricity:
             score += 30
             highlights.append("Electricity available (+30)")
-        elif criteria.require_electricity:
+        elif criteria.require_electricity and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(
                 f"Missing electricity (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})"
@@ -344,7 +355,7 @@ async def score_listing(
         if has_water:
             score += 30
             highlights.append("Water available (+30)")
-        elif criteria.require_water:
+        elif criteria.require_water and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(f"Missing water (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
 
@@ -352,7 +363,7 @@ async def score_listing(
             score += 20
             highlights.append("Sewage/wastewater solution (+20)")
 
-        if criteria.require_fenced and not has_fenced:
+        if criteria.require_fenced and not has_fenced and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(f"Missing fencing (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
 
@@ -360,21 +371,21 @@ async def score_listing(
         if has_fenced:
             score += 30
             highlights.append("Fenced plot (+30)")
-        elif criteria.require_fenced:
+        elif criteria.require_fenced and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(f"Missing fencing (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
 
         if has_water:
             score += 40
             highlights.append("Water on plot (+40)")
-        elif criteria.require_water:
+        elif criteria.require_water and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(f"Missing water (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})")
 
         if has_electricity:
             score += 40
             highlights.append("Electricity on plot (+40)")
-        elif criteria.require_electricity:
+        elif criteria.require_electricity and is_enriched:
             score += REQUIRED_OUTDOOR_FEATURE_PENALTY
             red_flags.append(
                 f"Missing electricity (required) ({REQUIRED_OUTDOOR_FEATURE_PENALTY})"

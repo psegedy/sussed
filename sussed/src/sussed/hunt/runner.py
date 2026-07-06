@@ -257,18 +257,19 @@ class AutonomousRunner:
                         if description:
                             listing["description"] = description
                             self.stats["descriptions_fetched"] += 1
-
-                            # Re-score with description
-                            is_poa = self.is_poa_listing(listing["price_czk"])
-                            new_score = await self._score_listing(listing, is_poa)
-                            listing["score"] = new_score["score"]
-                            listing["analysis"] = new_score
-
-                            # Save updated score to DB
-                            await self._save_score(listing["id"], new_score)
-
                             # Also save description to DB
                             await self._save_description(listing["id"], description)
+
+                        # _fetch_description persisted detail-endpoint data
+                        # (features/floor/...) to the DB. Pull it back into the
+                        # in-memory dict, then re-score so the scorer sees the
+                        # real features instead of the stale pass-1 snapshot.
+                        await self._refresh_enrichment_fields(listing)
+                        is_poa = self.is_poa_listing(listing["price_czk"])
+                        new_score = await self._score_listing(listing, is_poa)
+                        listing["score"] = new_score["score"]
+                        listing["analysis"] = new_score
+                        await self._save_score(listing["id"], new_score)
 
                     except ListingGoneError:
                         sold_ids.add(listing["id"])
@@ -807,6 +808,10 @@ class AutonomousRunner:
                 self.stats["descriptions_fetched"] += 1
                 await self._save_description(listing_id, description)
 
+            # Refresh enrichment-only fields the fetch just persisted so the
+            # scorer below runs on real feature data, not the stale snapshot.
+            await self._refresh_enrichment_fields(listing)
+
         # Skip if no description and agent says skip
         if (
             not listing.get("description")
@@ -848,6 +853,31 @@ class AutonomousRunner:
     async def _save_description(self, listing_id: str, description: str) -> None:
         """Save fetched description to database."""
         await save_description(listing_id, description)
+
+    async def _refresh_enrichment_fields(self, listing: dict[str, Any]) -> None:
+        """Reload detail-endpoint fields from the DB into the in-memory dict.
+
+        ``_fetch_description`` persists enrichment-only data (features, floor,
+        total_floors, usable area) to the database, but the dict built during the
+        first pass still holds the pre-enrichment snapshot (empty ``features``,
+        ``floor=None``). Without this refresh the scorer would run on stale data
+        and mis-fire feature scoring (phantom "missing parking/elevator").
+        """
+        from sqlmodel import select
+
+        from sussed.db.connection import get_session
+        from sussed.db.models import Listing
+
+        async with get_session() as session:
+            result = await session.execute(select(Listing).where(Listing.id == listing["id"]))
+            row = result.scalar_one_or_none()
+            if row is None:
+                return
+            listing["features"] = row.features
+            listing["floor"] = row.floor
+            listing["total_floors"] = row.total_floors
+            if row.area_m2 is not None:
+                listing["area_m2"] = float(row.area_m2)
 
     async def _llm_analyze(self, listing: dict[str, Any]) -> Any | None:
         """Analyze listing with LLM for deep natural language understanding."""
