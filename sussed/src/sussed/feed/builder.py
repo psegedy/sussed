@@ -1,4 +1,4 @@
-"""Build normalized data for the static Instagram-style feed."""
+"""Build normalized data for the static web feed."""
 
 from __future__ import annotations
 

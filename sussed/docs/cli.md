@@ -5,7 +5,7 @@ canonical: true
 project_dir: sussed/
 run_prefix: uv run sussed
 source: src/sussed/cli.py
-commands: [scrape, listings, hunt, drops, enrich, review, feed, url, db, version]
+commands: [scrape, listings, hunt, drops, enrich, review, service, feed, url, db, version]
 related: [docs/configuration.md]
 keywords: [brno, sreality, scrape, score, hunt, review, feed, html, price-drop]
 updated: 2026-07-06
@@ -29,7 +29,8 @@ commands:
   drops:    { purpose: "List price decreases (incl. dropped-to-POA)", anchor: "#price-drops-" }
   enrich:   { purpose: "Fetch descriptions + pre-warm photo cache", anchor: "#ai-reviewing-saved-listings" }
   review:   { purpose: "AI review workflow (candidates/prepare/validate/save/picks/status)", anchor: "#ai-reviewing-saved-listings" }
-  feed:     { purpose: "Generate a static Instagram-style HTML feed of best listings", anchor: "#instagram-style-feed-", writes: sussed-feed.html }
+  service:  { purpose: "Install/manage the scheduled daily runner", anchor: "#scheduled-service-" }
+  feed:     { purpose: "Generate a static HTML feed of best listings", anchor: "#web-feed-", writes: sussed-feed.html }
   url:      { purpose: "Resolve a listing URL by (partial) id", anchor: "#getting-listing-urls" }
   db:       { purpose: "init | status for the PostgreSQL database", anchor: "#database-management" }
   version:  { purpose: "Show version", anchor: "#other-commands" }
@@ -267,7 +268,7 @@ uv run sussed drops --days 7 --type 2+kk --city brno
 | `-t, --type` | Filter by apartment type | all |
 | `--to-poa` | Only listings that dropped to POA | false |
 
-## Instagram-style Feed 📸
+## Web Feed 📸
 
 Generate a **single self-contained HTML file** of the best listings — a visual, shareable
 alternative to the terminal output. No server, no API: the data is read from the database
@@ -279,11 +280,11 @@ Two tabs:
   score: the AI review score when reviewed, otherwise the cheap `hunt` quick-score. This
   surfaces strong-but-not-yet-reviewed listings too.
 
-Each listing renders as one Instagram-style post: photo carousel, price with price-change,
+Each listing renders as one feed post: photo carousel, price with price-change,
 listing dates, AI summary, pros/cons, and a link to the original sreality listing.
 
 ```bash
-# Best picks + fresh from the last week → sussed-feed.html
+# Best picks + fresh from the last month → sussed-feed.html
 uv run sussed feed
 
 # Open it in the browser as soon as it's generated
@@ -303,7 +304,7 @@ uv run sussed feed --min-score 700 --limit 100
 |------|-------------|---------|
 | `-o, --output` | Path to write the HTML file | sussed-feed.html |
 | `-l, --limit` | Max posts per tab | 50 |
-| `--fresh-days` | Age window (days) for the Fresh tab | 7 |
+| `--fresh-days` | Age window (days) for the Fresh tab | 31 |
 | `-m, --min-score` | Minimum effective score (both tabs) | — |
 | `-d, --district` | Filter by district (fuzzy) | all |
 | `-p, --property-type` | apartment, house, cottage, or garden | all |

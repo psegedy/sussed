@@ -715,7 +715,7 @@ def feed(
     ),
     limit: int = typer.Option(50, "--limit", "-l", min=1, max=500, help="Max posts per tab"),
     fresh_days: int = typer.Option(
-        7, "--fresh-days", min=1, help="Age window in days for the Fresh tab"
+        31, "--fresh-days", min=1, help="Age window in days for the Fresh tab"
     ),
     min_score: int | None = typer.Option(
         None, "--min-score", "-m", help="Minimum effective score for both tabs"
@@ -737,7 +737,7 @@ def feed(
         False, "--open/--no-open", help="Open the generated file in a browser"
     ),
 ) -> None:
-    """Generate a self-contained Instagram-style HTML feed 📸
+    """Generate a self-contained HTML feed of best listings 📸
 
     Reads the best listings straight from the database and writes ONE static HTML
     file — no server, no API. Two tabs: AI-reviewed picks (ranked by review score)
@@ -745,14 +745,14 @@ def feed(
     else the hunt quick-score). Filter/sort happen client-side in the browser.
 
     Examples:
-        # Top picks + fresh from the last week
+        # Top picks + fresh from the last month
         uv run sussed feed
 
         # Cheap apartments in one district, open it right away
         uv run sussed feed -p apartment -d "Královo Pole" --open
 
-        # Wider net: include unreviewed listings in AI Picks, last 30 days fresh
-        uv run sussed feed --all --fresh-days 30 -o /tmp/brno.html
+        # Wider net: include unreviewed listings in AI Picks, last 60 days fresh
+        uv run sussed feed --all --fresh-days 60 -o /tmp/brno.html
     """
 
     async def _run() -> tuple[str, object]:
