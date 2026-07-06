@@ -74,6 +74,8 @@ async def test_recent_scored_listings_builds_effective_score_query() -> None:
     assert "coalesce" in sql.lower()
     assert "listings.ai_analysis ->> 'score'" in sql
     assert ") ~ '^-?" in sql
+    # Bounded to 1-4 digits so an over-range string can't overflow the int cast.
+    assert "{1,4}" in sql
     assert "AS INTEGER" in sql
 
     # Never-scored listings excluded; ordered by effective score first.
