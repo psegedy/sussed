@@ -155,6 +155,10 @@ async def _dedup_new_listing(
     Uses a SAVEPOINT so any dedup failure (network, DB) rolls back ONLY the
     dedup work and never poisons the surrounding scrape transaction.
 
+    The flush is intentionally OUTSIDE the dedup-isolation try so real
+    ingest/flush errors propagate to the caller's per-listing handler rather
+    than being masked as a harmless "dedup failed" warning.
+
     Args:
         session: The active database session.
         listing: The newly-inserted listing to check.
@@ -162,13 +166,12 @@ async def _dedup_new_listing(
         client: Shared httpx client for detail fetches.
         stats: Mutable stats dict; ``duplicates_flagged`` is incremented on match.
     """
+    external_id = listing.external_id  # capture before a savepoint rollback can expire the ORM object
+    # CRITICAL: flush the new listing INSERT into the OUTER transaction before
+    # the savepoint. This is ingest work, so let its errors propagate to the
+    # caller's per-listing handler rather than masking them as a dedup failure.
+    await session.flush()
     try:
-        # CRITICAL: flush the new listing INSERT into the OUTER transaction
-        # BEFORE opening the savepoint. check_listing triggers autoflush when
-        # it queries candidates; if the new row were first flushed *inside* the
-        # savepoint, a dedup error would roll the INSERT back and we'd lose the
-        # scraped listing. Flushing here keeps the INSERT in the main txn.
-        await session.flush()
         async with session.begin_nested():
             match = await check_listing(
                 session, listing, scraper=scraper, client=client, allow_fetch=True
@@ -176,7 +179,7 @@ async def _dedup_new_listing(
         if match is not None:
             stats["duplicates_flagged"] += 1
     except Exception as exc:  # dedup must never abort a scrape
-        logger.warning(f"Dedup check failed for listing {listing.external_id}: {exc}")
+        logger.warning(f"Dedup check failed for listing {external_id}: {exc}")
 
 
 def scrape_sync(
