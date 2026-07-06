@@ -317,3 +317,56 @@ def test_dedup_config_rejects_gps_full_greater_than_veto() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         DedupConfig(gps_full_m=200.0, gps_veto_m=100.0)
+
+
+def test_apartment_with_both_floors_none_is_capped_to_suspected(
+    listing_factory: Callable[..., DedupListing],
+) -> None:
+    """Fix 3: two apartments whose floors are unknown must not reach 'duplicate'."""
+    old = listing_factory(floor=None)
+    new = listing_factory(
+        external_id="new-456",
+        floor=None,
+        status="active",
+        price_czk=5_900_000,
+    )
+
+    result = score_pair(old, new)
+
+    assert result.status != "duplicate"
+    assert result.status in {None, "suspected"}
+    assert any("floor not confirmed" in reason for reason in result.reasons)
+
+
+def test_house_strong_evidence_no_floors_can_be_duplicate(
+    listing_factory: Callable[..., DedupListing],
+) -> None:
+    """Fix 3 is apartment-only: a house with no floor data can still reach 'duplicate'."""
+    old = listing_factory(
+        property_category="house",
+        apartment_type=None,
+        area_m2=120.0,
+        floor=None,
+        title="Prodej domu 120 m² Brno",
+        description="Rodinný dům se zahradou v klidné části Brna u parku.",
+    )
+    new = listing_factory(
+        external_id="new-456",
+        property_category="house",
+        apartment_type=None,
+        area_m2=120.0,
+        floor=None,
+        status="active",
+        price_czk=5_900_000,
+        title="Prodej domu 120 m² Brno",
+        description="Rodinný dům se zahradou v klidné části Brna u parku.",
+        image_urls=(
+            "https://d18-b.sdn.cz/d_18/c_img_x/ABC/fc37.jpeg?fl=res",
+            "https://d18-b.sdn.cz/d_18/c_img_y/DEF/living.jpeg?fl=res",
+        ),
+    )
+
+    result = score_pair(old, new)
+
+    assert result.status == "duplicate"
+    assert result.confidence >= 0.85

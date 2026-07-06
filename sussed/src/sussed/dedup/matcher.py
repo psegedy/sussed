@@ -162,6 +162,17 @@ def score_pair(
         status = "suspected"
         reasons.append("new building cap")
 
+    # For apartments, a "duplicate" verdict requires both floors to be known AND equal.
+    # Unknown floors (e.g. pre-enrichment) cannot confirm same-unit identity; cap to "suspected".
+    # Houses/cottages/gardens have no floor concept and are unaffected.
+    if (
+        status == "duplicate"
+        and a.property_category == "apartment"
+        and not (a.floor is not None and b.floor is not None and a.floor == b.floor)
+    ):
+        status = "suspected"
+        reasons.append("apartment floor not confirmed equal → capped to suspected")
+
     return DuplicateMatch(status=status, confidence=confidence, reasons=reasons)
 
 
