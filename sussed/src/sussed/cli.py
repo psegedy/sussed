@@ -29,6 +29,8 @@ review_app = typer.Typer(help="AI review workflow commands 🧠")
 app.add_typer(review_app, name="review")
 service_app = typer.Typer(help="Scheduled daily service management 🕐")
 app.add_typer(service_app, name="service")
+dedup_app = typer.Typer(help="Duplicate / relisting detection commands 🔍")
+app.add_typer(dedup_app, name="dedup")
 
 UUID_PREFIX_RE = re.compile(r"^[0-9a-fA-F]{4,36}$")
 
@@ -1852,6 +1854,209 @@ def service_status() -> None:
     except (RuntimeError, OSError) as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from e
+
+
+@dedup_app.command("list")
+def list_duplicates(
+    status: str | None = typer.Option(
+        None,
+        "--status",
+        "-s",
+        help="Filter by duplicate_status: duplicate or suspected",
+    ),
+    city: str | None = typer.Option(None, "--city", "-c", help="Filter by city (case-insensitive)"),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max results to show"),
+) -> None:
+    """Show flagged duplicate / relisting pairs 🔍
+
+    Displays listings that have been flagged as duplicates or suspected
+    relistings of an older twin, ordered by confidence descending.
+
+    Examples:
+        uv run sussed dedup list
+        uv run sussed dedup list --status duplicate
+        uv run sussed dedup list --city brno --limit 20
+    """
+
+    async def _run() -> None:
+        from sqlmodel import select
+
+        from sussed.db.connection import get_session
+        from sussed.db.models import Listing
+
+        async with get_session() as session:
+            stmt = select(Listing).where(Listing.duplicate_of_id.is_not(None))
+            if status:
+                stmt = stmt.where(Listing.duplicate_status == status)
+            if city:
+                stmt = stmt.where(Listing.city.ilike(f"%{city}%"))
+            stmt = stmt.order_by(Listing.duplicate_confidence.desc().nulls_last()).limit(limit)
+
+            result = await session.execute(stmt)
+            newer_rows = list(result.scalars().all())
+
+            if not newer_rows:
+                console.print("[yellow]No duplicates flagged. Run `dedup scan` first.[/yellow]")
+                return
+
+            twin_ids = [r.duplicate_of_id for r in newer_rows if r.duplicate_of_id]
+            twin_map = {}
+            if twin_ids:
+                twin_result = await session.execute(
+                    select(Listing).where(Listing.id.in_(twin_ids))
+                )
+                twin_map = {t.id: t for t in twin_result.scalars().all()}
+
+            table = Table(title="🔍 Flagged Duplicates / Relistings", show_lines=True)
+            table.add_column("Newer ID", style="cyan", min_width=8, no_wrap=True)
+            table.add_column("Newer Title", style="cyan", max_width=22, no_wrap=True)
+            table.add_column("Status", min_width=9)
+            table.add_column("Conf", justify="right", min_width=5)
+            table.add_column("Price Δ", justify="right", min_width=16)
+            table.add_column("Older ID", style="green", min_width=8, no_wrap=True)
+            table.add_column("Older Title", style="green", max_width=22, no_wrap=True)
+            table.add_column("Reasons", max_width=36)
+            table.add_column("Newer URL", style="blue", no_wrap=True)
+            table.add_column("Older URL", style="blue", no_wrap=True)
+
+            for row in newer_rows:
+                conf_str = f"{float(row.duplicate_confidence):.2f}" if row.duplicate_confidence else "—"
+                status_str = row.duplicate_status or "—"
+                newer_id = str(row.id)[:8]
+                newer_title = (row.title or "")[:22]
+
+                twin = twin_map.get(row.duplicate_of_id) if row.duplicate_of_id else None
+                if twin:
+                    older_id = str(twin.id)[:8]
+                    older_title = (twin.title or "")[:22]
+                    older_url = twin.url or "—"
+                    if twin.price_czk and twin.price_czk > 0:
+                        delta = (row.price_czk or 0) - twin.price_czk
+                        pct = delta / twin.price_czk * 100
+                        sign = "+" if delta >= 0 else ""
+                        delta_str = f"{sign}{delta:,} ({sign}{pct:.1f}%)"
+                    else:
+                        delta_str = "—"
+                else:
+                    older_id = str(row.duplicate_of_id)[:8] if row.duplicate_of_id else "—"
+                    older_title = "[dim]not found[/dim]"
+                    older_url = "—"
+                    delta_str = "—"
+
+                reasons = row.duplicate_reasons or []
+                reasons_str = "; ".join(reasons[:3])
+                if len(reasons) > 3:
+                    reasons_str += f" (+{len(reasons) - 3})"
+
+                table.add_row(
+                    newer_id,
+                    newer_title,
+                    status_str,
+                    conf_str,
+                    delta_str,
+                    older_id,
+                    older_title,
+                    reasons_str,
+                    row.url or "—",
+                    older_url,
+                )
+
+            console.print(table)
+            console.print(f"\n[dim]Showing {len(newer_rows)} flagged listing(s).[/dim]")
+
+    asyncio.run(_run())
+
+
+@dedup_app.command("scan")
+def dedup_scan(
+    source: str = typer.Option("sreality", "--source", help="Source to scan"),
+    city: str | None = typer.Option(None, "--city", "-c", help="Filter by city (case-insensitive)"),
+    since: int | None = typer.Option(
+        None, "--since", help="Only listings first_seen_at within the last N days"
+    ),
+    unchecked: bool = typer.Option(
+        False, "--unchecked", is_flag=True, help="Only listings not yet checked"
+    ),
+    limit: int = typer.Option(0, "--limit", "-l", help="Max listings to scan (0 = no cap)"),
+    dry_run: bool = typer.Option(False, "--dry-run", is_flag=True, help="Preview without saving"),
+    force: bool = typer.Option(
+        False, "--force", is_flag=True, help="Re-check even already-checked listings"
+    ),
+) -> None:
+    """Backfill duplicate detection over stored listings (no API calls) 🔍
+
+    Runs dedup detection using stored fields only — no sreality API calls are
+    made. Fresh scrapes already run detection at ingest; use this command to
+    backfill older listings or re-score with updated logic.
+
+    Examples:
+        uv run sussed dedup scan --source sreality --city brno
+        uv run sussed dedup scan --unchecked --limit 500
+        uv run sussed dedup scan --dry-run --since 30
+        uv run sussed dedup scan --force --limit 100
+    """
+
+    async def _run() -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from loguru import logger
+        from sqlmodel import select
+
+        from sussed.db.connection import get_session
+        from sussed.db.models import Listing
+        from sussed.dedup.detector import check_listing
+
+        async with get_session() as session:
+            stmt = select(Listing).where(Listing.source == source)
+            if city:
+                stmt = stmt.where(Listing.city.ilike(f"%{city}%"))
+            if since is not None:
+                cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=since)
+                stmt = stmt.where(Listing.first_seen_at >= cutoff)
+            if unchecked:
+                stmt = stmt.where(Listing.duplicate_checked_at.is_(None))
+            stmt = stmt.order_by(Listing.first_seen_at.asc())
+            if limit > 0:
+                stmt = stmt.limit(limit)
+
+            result = await session.execute(stmt)
+            listings = list(result.scalars().all())
+
+            scanned = 0
+            flagged_counts: dict[str, int] = {"duplicate": 0, "suspected": 0}
+
+            for listing in listings:
+                try:
+                    match = await check_listing(
+                        session, listing, allow_fetch=False, force=force
+                    )
+                except Exception as exc:
+                    logger.warning(f"Error checking listing {listing.id}: {exc}")
+                    continue
+
+                scanned += 1
+                if match is not None and match.status:
+                    flagged_counts[match.status] = flagged_counts.get(match.status, 0) + 1
+
+                if not dry_run and scanned % 100 == 0:
+                    await session.commit()
+
+            if dry_run:
+                await session.rollback()
+                console.print("[yellow]DRY RUN — no changes saved[/yellow]")
+            else:
+                await session.commit()
+
+            total_flagged = sum(flagged_counts.values())
+            dup = flagged_counts.get("duplicate", 0)
+            sus = flagged_counts.get("suspected", 0)
+            console.print(
+                f"Scanned [bold]{scanned}[/bold] listing(s). "
+                f"Flagged [bold]{total_flagged}[/bold] "
+                f"([green]{dup} duplicate[/green], [yellow]{sus} suspected[/yellow])."
+            )
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
