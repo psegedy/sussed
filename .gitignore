@@ -1,6 +1,8 @@
 .worktrees/
 .sussed/
 
-# Local process docs (brainstorm specs + implementation plans) — not committed
+# Local process docs & notes — not committed
 docs/plans/
 docs/specs/
+ideas.txt
+docs/ideas.md
