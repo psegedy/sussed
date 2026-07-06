@@ -127,7 +127,13 @@ async def test_dedup_new_listing_error_isolation() -> None:
         mock_client = AsyncMock()
         stats: dict[str, int] = {"duplicates_flagged": 0}
 
-        with patch("sussed.scrapers.runner.check_listing", side_effect=RuntimeError("boom")):
+        def _mutate_then_raise(_sess, lst, *, _scraper, _client, _allow_fetch):
+            """Mutate the ORM object (simulating partial dedup work) then raise."""
+            lst.duplicate_status = "suspected"
+            lst.duplicate_checked_at = datetime.utcnow()
+            raise RuntimeError("boom")
+
+        with patch("sussed.scrapers.runner.check_listing", side_effect=_mutate_then_raise):
             await _dedup_new_listing(session, listing, mock_scraper, mock_client, stats)
 
         # Must not have raised; counter stays at 0
