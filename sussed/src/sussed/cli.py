@@ -987,6 +987,40 @@ def enrich(
 
 
 @app.command()
+def refresh(
+    source: str = typer.Option("sreality", "--source", help="Source to refresh"),
+    city: str | None = typer.Option(None, "--city", "-c", help="Filter by city"),
+    limit: int = typer.Option(100, "--limit", "-l", help="Max listings to re-check"),
+    stale_days: int | None = typer.Option(
+        None, "--stale-days", help="Only listings not seen in the last N days"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", is_flag=True, help="Preview without saving"),
+) -> None:
+    """Re-check existing active listings: mark gone (404/410) as removed, refresh price/details 🔄"""
+    from sussed.scrapers.refresh import run_refresh
+
+    async def _run() -> None:
+        stats = await run_refresh(
+            source=source, city=city, limit=limit, stale_days=stale_days, dry_run=dry_run
+        )
+        if dry_run:
+            console.print("[yellow]DRY RUN — no changes saved[/yellow]")
+        console.print(
+            f"Checked [bold]{stats['checked']}[/bold] · "
+            f"[magenta]{stats['removed']} removed[/magenta] · "
+            f"[cyan]{stats['price_changes']} price changes[/cyan] · "
+            f"[green]{stats['updated']} updated[/green] · "
+            f"[red]{stats['errors']} errors[/red]"
+        )
+
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+
+@app.command()
 def hunt(
     config: str = typer.Option(
         "search_config.yaml",
