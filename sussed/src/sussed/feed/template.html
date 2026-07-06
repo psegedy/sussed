@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__PAGE_TITLE__</title>
+  <meta name="description" content="Sussed real-estate dark gallery feed.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,500..800,40,1&family=Hanken+Grotesk:wght@400;500;650;800&display=swap" rel="stylesheet">
+  <style>__STYLES__</style>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <main class="app-shell">
+    <header class="hero">
+      <p class="eyebrow">AI realitní galerie · vygenerováno <time>__GENERATED_AT__</time></p>
+      <div class="hero__row">
+        <div>
+          <h1>sussed</h1>
+          <p class="tagline">Temná galerie bytů, domů a realitních podezřelostí — žádný feed plný mid bordelu.</p>
+        </div>
+        <div class="fresh-note">Fresh okno: <strong>__FRESH_DAYS__ dní</strong></div>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Feed sections">
+      <button class="tab is-active" type="button" data-tab="ai_picks" aria-pressed="true">
+        <span>🏆 AI Picks</span><b data-count="ai_picks">0</b>
+      </button>
+      <button class="tab" type="button" data-tab="fresh" aria-pressed="false">
+        <span>🆕 Fresh</span><b data-count="fresh">0</b>
+      </button>
+    </nav>
+
+    <section class="controls" aria-label="Feed controls">
+      <label>Sort
+        <select id="sort-select">
+          <option value="score">Best score</option>
+          <option value="newest">Newest</option>
+          <option value="price_asc">Price ↑</option>
+          <option value="price_desc">Price ↓</option>
+          <option value="biggest_drop">Biggest drop</option>
+        </select>
+      </label>
+      <label>Listing
+        <select id="listing-filter">
+          <option value="all">All</option>
+          <option value="sale">Sale</option>
+          <option value="rent">Rent</option>
+        </select>
+      </label>
+      <label>Property
+        <select id="property-filter">
+          <option value="all">All</option>
+          <option value="apartment">Apartment</option>
+          <option value="house">House</option>
+          <option value="cottage">Cottage</option>
+          <option value="garden">Garden</option>
+        </select>
+      </label>
+      <div class="fresh-window" id="fresh-window" hidden>
+        <span>Window</span>
+        <button class="seg is-active" type="button" data-window="day">Day</button>
+        <button class="seg" type="button" data-window="week">Week</button>
+      </div>
+    </section>
+
+    <section id="feed" class="feed" aria-live="polite"></section>
+  </main>
+
+  <script id="feed-data" type="application/json">__FEED_DATA_JSON__</script>
+  <script>__SCRIPT__</script>
+</body>
+</html>
