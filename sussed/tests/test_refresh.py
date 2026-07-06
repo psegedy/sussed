@@ -34,22 +34,22 @@ def _detail(price_czk: float = 4_500_000.0, price_czk_m2: int = 82_000) -> Sreal
 
 
 def _seed(source: str, external_id: str, **kw: object) -> Listing:
-    base: dict = dict(
-        source=source,
-        external_id=external_id,
-        url=f"https://example.test/{external_id}",
-        title="Prodej bytu 2+kk 55 m2",
-        price_czk=5_000_000,
-        price_per_m2=90_000,
-        listing_type=ListingType.SALE,
-        city="Brno",
-        property_category=PropertyCategory.APARTMENT,
-        features={},
-        raw_labels=[],
-        image_urls=[],
-        status=ListingStatus.ACTIVE,
-        last_seen_at=datetime(2026, 1, 1, 12, 0, 0),
-    )
+    base: dict = {
+        "source": source,
+        "external_id": external_id,
+        "url": f"https://example.test/{external_id}",
+        "title": "Prodej bytu 2+kk 55 m2",
+        "price_czk": 5_000_000,
+        "price_per_m2": 90_000,
+        "listing_type": ListingType.SALE,
+        "city": "Brno",
+        "property_category": PropertyCategory.APARTMENT,
+        "features": {},
+        "raw_labels": [],
+        "image_urls": [],
+        "status": ListingStatus.ACTIVE,
+        "last_seen_at": datetime(2026, 1, 1, 12, 0, 0),
+    }
     base.update(kw)
     return Listing(**base)
 
