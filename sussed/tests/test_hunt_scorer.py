@@ -69,7 +69,7 @@ async def test_cottage_with_electricity_and_water_scores_higher_than_without() -
     )
     without_utilities = await score_listing(
         config,
-        _minimal_listing(),
+        _minimal_listing({"electricity": False, "water": False}),
         is_poa=True,
         poa_price_threshold=1,
     )
@@ -332,7 +332,7 @@ async def test_score_listing_soft_penalizes_missing_required_elevator() -> None:
 
     result = await score_listing(
         config,
-        _minimal_listing(),
+        _minimal_listing({"elevator": False}),
         is_poa=True,
         poa_price_threshold=1,
     )
