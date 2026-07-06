@@ -50,14 +50,21 @@ uv run sussed hunt -c search_config.yaml --scrape   # score them
 
 ## 🗂 Project Structure
 
+Heads up: the repo root and the Python project are **both** named `sussed/` (run all `uv run sussed …` commands from the inner one).
+
 ```
-sussed/
-├── src/sussed/         # CLI, scrapers, hunt, review, models, DB layer
-├── docs/               # CLI + configuration reference
-├── tests/              # pytest suite
-├── docker-compose.yml  # PostgreSQL
-└── pyproject.toml
-.copilot/sussed-plugin/skills/   # AI review skills (sussed-ai-review, -cottage-, -garden-)
+sussed/                              # repo root
+├── README.md                        # you are here
+├── .copilot/sussed-plugin/skills/   # AI review skills (sussed-ai-review, -cottage-, -garden-)
+└── sussed/                          # the Python project — run commands from here
+    ├── src/sussed/                  # cli · scrapers · hunt · review · models · db · config
+    ├── docs/                        # cli.md + configuration.md
+    ├── scripts/                     # init-db.sql
+    ├── tests/                       # pytest suite
+    ├── *_config.yaml                # search / cottage / garden / simple hunt configs
+    ├── docker-compose.yml           # PostgreSQL
+    ├── .env.example
+    └── pyproject.toml · uv.lock
 ```
 
 ## 🤝 Contributing
