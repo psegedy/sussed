@@ -8,7 +8,7 @@ from math import asin, cos, radians, sin, sqrt
 from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -40,23 +40,42 @@ class DedupListing:
 class DedupConfig(BaseModel):
     """Tunable weights and thresholds for pairwise duplicate scoring."""
 
-    gps_full_m: float = Field(default=30.0)
-    gps_veto_m: float = Field(default=150.0)
-    area_exact_m2: float = Field(default=1.0)
-    area_veto_pct: float = Field(default=0.06)
-    min_desc_len: int = Field(default=40)
-    desc_full_ratio: float = Field(default=0.90)
-    desc_min_ratio: float = Field(default=0.50)
-    overwhelming_desc_ratio: float = Field(default=0.95)
-    weight_gps: float = Field(default=0.25)
-    weight_area: float = Field(default=0.20)
-    weight_floor: float = Field(default=0.15)
-    weight_desc: float = Field(default=0.25)
-    weight_title: float = Field(default=0.05)
-    weight_photos: float = Field(default=0.10)
-    weight_corroborating: float = Field(default=0.05)
-    threshold_duplicate: float = Field(default=0.85)
-    threshold_suspected: float = Field(default=0.60)
+    model_config = ConfigDict(frozen=True)
+
+    gps_full_m: float = Field(default=30.0, allow_inf_nan=False, gt=0)
+    gps_veto_m: float = Field(default=150.0, allow_inf_nan=False, gt=0)
+    area_exact_m2: float = Field(default=1.0, allow_inf_nan=False, gt=0)
+    area_veto_pct: float = Field(default=0.06, allow_inf_nan=False, gt=0, le=1)
+    min_desc_len: int = Field(default=40, ge=0)
+    desc_full_ratio: float = Field(default=0.90, allow_inf_nan=False, ge=0, le=1)
+    desc_min_ratio: float = Field(default=0.50, allow_inf_nan=False, ge=0, le=1)
+    overwhelming_desc_ratio: float = Field(default=0.95, allow_inf_nan=False, ge=0, le=1)
+    weight_gps: float = Field(default=0.25, allow_inf_nan=False, ge=0, le=1)
+    weight_area: float = Field(default=0.20, allow_inf_nan=False, ge=0, le=1)
+    weight_floor: float = Field(default=0.15, allow_inf_nan=False, ge=0, le=1)
+    weight_desc: float = Field(default=0.25, allow_inf_nan=False, ge=0, le=1)
+    weight_title: float = Field(default=0.05, allow_inf_nan=False, ge=0, le=1)
+    weight_photos: float = Field(default=0.10, allow_inf_nan=False, ge=0, le=1)
+    weight_corroborating: float = Field(default=0.05, allow_inf_nan=False, ge=0, le=1)
+    threshold_duplicate: float = Field(default=0.85, allow_inf_nan=False, ge=0, le=1)
+    threshold_suspected: float = Field(default=0.60, allow_inf_nan=False, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _check_ordering_invariants(self) -> DedupConfig:
+        """Enforce invariants between related fields to prevent misconfiguration."""
+        if self.gps_full_m > self.gps_veto_m:
+            raise ValueError(
+                f"gps_full_m ({self.gps_full_m}) must be <= gps_veto_m ({self.gps_veto_m})"
+            )
+        if self.desc_min_ratio > self.desc_full_ratio:
+            raise ValueError(
+                f"desc_min_ratio ({self.desc_min_ratio}) must be <= desc_full_ratio ({self.desc_full_ratio})"
+            )
+        if self.threshold_suspected > self.threshold_duplicate:
+            raise ValueError(
+                f"threshold_suspected ({self.threshold_suspected}) must be <= threshold_duplicate ({self.threshold_duplicate})"
+            )
+        return self
 
 
 class DuplicateMatch(BaseModel):
