@@ -123,6 +123,68 @@ def _image_count_from_sreality(estate: SrealityEstate) -> int:
     return len(estate.advert_images_all or estate.advert_images or [])
 
 
+async def apply_price_change(
+    session: AsyncSession,
+    listing: Listing,
+    new_price: int,
+    new_price_per_m2: int | None,
+) -> bool:
+    """Record a price change (with bounce detection) and update the listing.
+
+    Args:
+        session: Database session.
+        listing: Listing object to update.
+        new_price: New price in CZK.
+        new_price_per_m2: New price per m², or None if unavailable.
+
+    Returns:
+        True if a real (non-bounce) price change was applied.
+    """
+    if listing.price_czk == new_price:
+        return False
+
+    old_price = listing.price_czk
+
+    recent_prices_stmt = (
+        select(PriceHistory.price_czk)
+        .where(PriceHistory.listing_id == listing.id)
+        .order_by(PriceHistory.recorded_at.desc())
+        .limit(2)
+    )
+    recent_result = await session.execute(recent_prices_stmt)
+    recent_prices = [row[0] for row in recent_result.all()]
+    if len(recent_prices) == 2 and new_price == recent_prices[1]:
+        logger.info(
+            f"Price bounce detected for {listing.external_id}: "
+            f"{recent_prices[1]:,} -> {recent_prices[0]:,} -> {new_price:,} CZK - ignoring"
+        )
+        return False
+
+    change_amount = new_price - old_price
+    change_percent = (
+        Decimal(change_amount) / Decimal(old_price) * 100 if old_price else None
+    )
+    session.add(
+        PriceHistory(
+            listing_id=listing.id,
+            price_czk=new_price,
+            price_per_m2=new_price_per_m2,
+            change_type="increase" if change_amount > 0 else "decrease",
+            change_amount=abs(change_amount),
+            change_percent=abs(change_percent) if change_percent else None,
+        )
+    )
+    listing.price_czk = new_price
+    listing.price_per_m2 = new_price_per_m2
+    listing.last_price_change_at = datetime.utcnow()
+    pct_str = f" / {change_percent:+.1f}%" if change_percent is not None else ""
+    logger.info(
+        f"Price change for {listing.external_id}: {old_price:,} -> {new_price:,} CZK "
+        f"({change_amount:+,}{pct_str})"
+    )
+    return True
+
+
 async def upsert_listing_from_sreality(
     session: AsyncSession,
     estate: SrealityEstate,
@@ -157,54 +219,7 @@ async def upsert_listing_from_sreality(
     if existing:
         listing = existing
 
-        if listing.price_czk != new_price:
-            old_price = listing.price_czk
-
-            is_bounce = False
-            recent_prices_stmt = (
-                select(PriceHistory.price_czk)
-                .where(PriceHistory.listing_id == listing.id)
-                .order_by(PriceHistory.recorded_at.desc())
-                .limit(2)
-            )
-            recent_result = await session.execute(recent_prices_stmt)
-            recent_prices = [row[0] for row in recent_result.all()]
-
-            if len(recent_prices) == 2 and new_price == recent_prices[1]:
-                is_bounce = True
-                logger.info(
-                    f"Price bounce detected for {estate.hash_id}: "
-                    f"{recent_prices[1]:,} → {recent_prices[0]:,} → {new_price:,} CZK — ignoring"
-                )
-
-            if not is_bounce:
-                price_changed = True
-                change_amount = new_price - old_price
-                change_percent = (
-                    Decimal(change_amount) / Decimal(old_price) * 100 if old_price else None
-                )
-
-                price_record = PriceHistory(
-                    listing_id=listing.id,
-                    price_czk=new_price,
-                    price_per_m2=new_price_per_m2,
-                    change_type="increase" if change_amount > 0 else "decrease",
-                    change_amount=abs(change_amount),
-                    change_percent=abs(change_percent) if change_percent else None,
-                )
-                session.add(price_record)
-
-                listing.price_czk = new_price
-                listing.price_per_m2 = new_price_per_m2
-                listing.last_price_change_at = now
-
-                pct_str = (
-                    f" / {change_percent:+.1f}%" if change_percent is not None else ""
-                )
-                logger.info(
-                    f"Price change for {estate.hash_id}: {old_price:,} -> {new_price:,} CZK "
-                    f"({change_amount:+,}{pct_str})"
-                )
+        price_changed = await apply_price_change(session, listing, new_price, new_price_per_m2)
 
         listing.url = _build_listing_url(estate)
         listing.title = estate.advert_name
